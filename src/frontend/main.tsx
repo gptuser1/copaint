@@ -1,11 +1,9 @@
-// CoPaint 前端入口（阶段4填充完整画布）
+// CoPaint 前端入口
 import { createRoot } from 'react-dom/client';
+import { App } from './App';
+import './styles.css';
 
 const el = document.getElementById('root');
 if (el) {
-  createRoot(el).render(
-    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-      CoPaint 加载中…
-    </div>,
-  );
+  createRoot(el).render(<App />);
 }
