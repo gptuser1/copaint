@@ -1,13 +1,13 @@
 // AI 用例层：执行 AI 绘制任务（单次 / 多步链式）+ Queues 消费入口
-import { getBoard, addElement } from '../infrastructure/db/board-repo';
+// 读画板与写元素都走 BoardHub DO，配置走 Ocean
+import { getState, addElement } from '../realtime/board-client';
 import { generateElements } from '../infrastructure/ai/client';
 import { requireConfig } from './config';
-import { broadcast } from '../realtime/broadcaster';
 import type { AiJob, BoardElement } from '../domain/types';
 
 // 多步任务：每步生成一小批元素并广播
 export async function runAiJob(env: Env, job: AiJob): Promise<void> {
-  const board = await getBoard(env, job.boardId);
+  const board = await getState(env, job.boardId);
   if (!board) return;
 
   const stepHint = job.mode === 'multi'
@@ -33,10 +33,9 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
   );
   if (partials.length === 0) return;
 
-  // 写入元素并逐个广播
+  // 写入元素（DO 内部会广播 'add'）
   for (const p of partials) {
-    const el = await addElement(env, job.boardId, p as Omit<BoardElement, 'createdAt' | 'id'> & { id?: string });
-    await broadcast(env, job.boardId, 'add', el);
+    await addElement(env, job.boardId, p as Omit<BoardElement, 'createdAt' | 'id'> & { id?: string });
   }
 
   // 多步：若还有后续步，延迟重投递（delayMs 秒后）

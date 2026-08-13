@@ -11,10 +11,6 @@ not_found_handling = "none"
 [secrets]
 required = ["COP_DB_BASE"]
 
-[observability.logs]
-enabled = true
-invocation_logs = true
-
 # ── AI 调度队列 ──
 [[queues.producers]]
 binding = "AI_QUEUE"
