@@ -34,7 +34,6 @@ export function App() {
   const [tool, setTool] = useState<ElementType>('pen');
   const [color, setColor] = useState('#000000');
   const [strokeWidth, setStrokeWidth] = useState(3);
-  const [panMode, setPanMode] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [mode, setMode] = useState<'once' | 'multi'>('once');
   const [steps, setSteps] = useState(5);
@@ -259,7 +258,6 @@ export function App() {
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="颜色" style={{ width: 34, height: 30, padding: 0, border: 'none' }} />
         <input type="number" min={1} max={30} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} title="粗细" style={{ width: 56 }} />
         <button onClick={handleUndo} style={{ ...btnStyle, border: '1px solid #999' }}>↩ 撤销</button>
-        <button onClick={() => setPanMode((v) => !v)} style={{ ...btnStyle, border: '1px solid #999', background: panMode ? '#fde68a' : '#fff' }}>✋ 平移</button>
         <button onClick={handleClear} style={{ ...btnStyle, border: '1px solid #999' }}>🗑 清空</button>
         <button onClick={handleExport} style={{ ...btnStyle, border: '1px solid #999' }}>⬇ 导出 PNG</button>
         <button onClick={() => setShowConfig((s) => !s)} style={{ ...btnStyle, border: '1px solid #999' }}>⚙ 配置</button>
@@ -282,7 +280,6 @@ export function App() {
         tool={tool}
         color={color}
         strokeWidth={strokeWidth}
-        panMode={panMode}
         onCommit={handleCommit}
         onClear={handleClear}
         width={board.width}
