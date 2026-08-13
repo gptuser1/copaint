@@ -71,10 +71,11 @@ boardsApp.post('/:id/clear', async (c) => {
 // 批量操作（外部 API）
 boardsApp.post('/:id/ops', async (c) => {
   const id = c.req.param('id');
-  const ops = await c.req.json();
+  const raw = await c.req.json();
+  const ops = Array.isArray(raw) ? raw : (raw as any)?.ops;
   if (!Array.isArray(ops)) throw new ValidationError('ops must be an array');
-  const added = await board.batchOps(c.env, id, ops);
-  return c.json({ ok: true, added });
+  const result = await board.batchOps(c.env, id, ops);
+  return c.json({ ...result, ok: true });
 });
 
 // 直接执行 turtle 脚本（agent 自己把自然语言翻译成脚本后提交，不经内置 LLM）

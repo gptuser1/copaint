@@ -142,9 +142,15 @@ export class BoardHub extends DurableObject {
 
     // 批量操作（外部 API）
     if (req.method === 'POST' && path === '/ops') {
-      const { ops } = await req.json() as { ops: Array<Record<string, any>> };
+      const raw = await req.json();
+      const ops = Array.isArray(raw) ? raw : (raw as any)?.ops;
+      if (!Array.isArray(ops)) {
+        return Response.json({ ok: false, error: 'ops must be an array' }, { status: 400 });
+      }
       const state = await this.ensureState();
       const added: BoardElement[] = [];
+      let deleted = 0;
+      let updated = 0;
       for (const op of ops) {
         const { action, element, eid, patch } = op;
         if (action === 'add' && element) {
@@ -153,14 +159,19 @@ export class BoardHub extends DurableObject {
           added.push(full);
         } else if (action === 'update' && eid && patch) {
           const idx = state.elements.findIndex((e) => e.id === eid);
-          if (idx !== -1) state.elements[idx] = { ...state.elements[idx], ...patch, id: eid };
+          if (idx !== -1) {
+            state.elements[idx] = { ...state.elements[idx], ...patch, id: eid };
+            updated++;
+          }
         } else if (action === 'delete' && eid) {
+          const before = state.elements.length;
           state.elements = state.elements.filter((e) => e.id !== eid);
+          deleted += before - state.elements.length;
         }
       }
       await this.saveState(state);
       this.broadcast('ops', ops);
-      return Response.json({ ok: true, added });
+      return Response.json({ ok: true, added, deleted, updated });
     }
 
     // 读取 AI 执行代次

@@ -42,6 +42,6 @@ export function clearBoard(env: Env, boardId: string): Promise<void> {
 }
 
 // 批量操作（外部 API）并广播
-export function batchOps(env: Env, boardId: string, ops: Array<Record<string, any>>): Promise<BoardElement[]> {
-  return client.batchOps(env, boardId, ops).then((r) => r.added);
+export function batchOps(env: Env, boardId: string, ops: Array<Record<string, any>>): Promise<{ ok: boolean; added: BoardElement[]; deleted: number; updated: number }> {
+  return client.batchOps(env, boardId, ops);
 }
