@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DrawCanvas } from './DrawCanvas';
 import * as api from './api';
+import { useTheme } from './theme';
 import type { BoardElement, ElementType } from '../domain/types';
 
 const TOOLS: { id: ElementType; label: string }[] = [
@@ -73,6 +74,7 @@ interface AiLog {
 }
 
 export function App() {
+  const [theme, toggleTheme] = useTheme();
   const [authed, setAuthed] = useState(false);
   const [elements, setElements] = useState<BoardElement[]>([]);
   const [tool, setTool] = useState<ElementType>('pen');
@@ -312,13 +314,16 @@ export function App() {
     }
   }, [addLog]);
 
-  const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer' };
+  const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer', background: 'var(--btn-bg)', color: 'var(--text)', border: '1px solid var(--border)' };
 
   // 未登录：令牌输入界面
   if (!authed) {
     return (
       <div style={{ padding: 32, maxWidth: 420, margin: '0 auto', fontFamily: 'system-ui, sans-serif' }}>
-        <h2>🖌️ CoPaint</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ marginTop: 0 }}>🖌️ CoPaint</h2>
+          <button onClick={toggleTheme} style={btnStyle}>{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
+        </div>
         <div style={{ marginBottom: 8 }}>请输入访问令牌以继续</div>
         <input
           value={tokenInput}
@@ -329,7 +334,7 @@ export function App() {
           style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
         />
         {error && <div style={{ color: '#e74c3c', marginTop: 8 }}>{error}</div>}
-        <button onClick={handleLogin} style={{ ...btnStyle, marginTop: 12, border: '1px solid #999' }}>登录</button>
+        <button onClick={handleLogin} style={{ ...btnStyle, marginTop: 12 }}>登录</button>
       </div>
     );
   }
@@ -340,26 +345,27 @@ export function App() {
 
       {/* 工具栏 */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+        <button onClick={toggleTheme} style={btnStyle}>{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
         {TOOLS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTool(t.id)}
-            style={{ ...btnStyle, background: tool === t.id ? '#dbeafe' : '#fff', border: '1px solid #999' }}
+            style={{ ...btnStyle, background: tool === t.id ? 'var(--btn-active)' : 'var(--btn-bg)' }}
           >
             {t.label}
           </button>
         ))}
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="颜色" style={{ width: 34, height: 30, padding: 0, border: 'none' }} />
         <input type="number" min={1} max={30} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} title="粗细" style={{ width: 56 }} />
-        <button onClick={handleUndo} style={{ ...btnStyle, border: '1px solid #999' }}>↩ 撤销</button>
-        <button onClick={handleClear} style={{ ...btnStyle, border: '1px solid #999' }}>🗑 清空</button>
-        <button onClick={handleExport} style={{ ...btnStyle, border: '1px solid #999' }}>⬇ 导出 PNG</button>
-        <button onClick={() => setShowConfig((s) => !s)} style={{ ...btnStyle, border: '1px solid #999' }}>⚙ 配置</button>
-        <button onClick={handleLogout} style={{ ...btnStyle, border: '1px solid #999' }}>退出</button>
+        <button onClick={handleUndo} style={btnStyle}>↩ 撤销</button>
+        <button onClick={handleClear} style={btnStyle}>🗑 清空</button>
+        <button onClick={handleExport} style={btnStyle}>⬇ 导出 PNG</button>
+        <button onClick={() => setShowConfig((s) => !s)} style={btnStyle}>⚙ 配置</button>
+        <button onClick={handleLogout} style={btnStyle}>退出</button>
       </div>
 
       {/* 当前画板信息 */}
-      <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
         画板：{board.width} × {board.height}
       </div>
 
@@ -378,6 +384,7 @@ export function App() {
         onClear={handleClear}
         width={board.width}
         height={board.height}
+        theme={theme}
       />
 
       {/* AI 指令 */}
@@ -399,18 +406,18 @@ export function App() {
             <input type="number" min={1} max={10} value={steps} onChange={(e) => setSteps(Number(e.target.value))} style={{ width: 60, padding: 6 }} />
           </>
         )}
-        <button onClick={handleAi} disabled={aiBusy} style={{ ...btnStyle, border: '1px solid #999', background: aiBusy ? '#eee' : '#4caf50', color: aiBusy ? '#999' : '#fff' }}>
+        <button onClick={handleAi} disabled={aiBusy} style={{ ...btnStyle, background: aiBusy ? 'var(--btn-bg)' : '#4caf50', color: aiBusy ? 'var(--muted)' : '#fff' }}>
           {aiBusy ? '处理中…' : '🤖 让 AI 画'}
         </button>
-        <button onClick={handleTestAi} disabled={aiBusy} style={{ ...btnStyle, border: '1px solid #999', background: aiBusy ? '#eee' : '#ece3ff', color: aiBusy ? '#999' : '#5b21b6' }}>
+        <button onClick={handleTestAi} disabled={aiBusy} style={{ ...btnStyle, background: aiBusy ? 'var(--btn-bg)' : '#4c1d95', color: aiBusy ? 'var(--muted)' : '#e9d5ff' }}>
           {aiBusy ? '处理中…' : '🔬 测试 AI'}
         </button>
-        <button onClick={handleCancelAi} style={{ ...btnStyle, border: '1px solid #b91c1c', background: '#fff5f5', color: '#b91c1c' }}>⏹ 终止 AI 任务</button>
-        <button onClick={() => setAiLogs([])} style={{ ...btnStyle, border: '1px solid #999' }}>清空日志</button>
+        <button onClick={handleCancelAi} style={{ ...btnStyle, background: '#7f1d1d', color: '#fecaca', border: '1px solid #f87171' }}>⏹ 终止 AI 任务</button>
+        <button onClick={() => setAiLogs([])} style={btnStyle}>清空日志</button>
       </div>
 
       {/* LLM 可调参数 */}
-      <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: '#444' }}>
+      <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: 'var(--muted)' }}>
         <label title="随机性，0-2，越高越发散">
           温度
           <input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(e) => setTemperature(e.target.value)} style={{ width: 60, marginLeft: 4, padding: 4 }} />
