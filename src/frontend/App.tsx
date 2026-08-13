@@ -24,28 +24,37 @@ function turtlePt(x: number, y: number): string {
 }
 
 // 把一次手绘动作翻译成 turtle 脚本（前端统一走 turtle 落笔）
+// 先抬笔(pu)移到起点再落笔(pd)，避免从原点拉出一条引线
 function elementToTurtleScript(el: Partial<BoardElement> & { id?: string }): string {
   const lines: string[] = [`color ${el.color || '#000000'}`, `width ${el.strokeWidth ?? 3}`];
   const type = el.type;
+  const move = (px: number, py: number) => lines.push(`goto ${turtlePt(px, py)}`);
   if (type === 'pen') {
     const pts = el.points || [];
-    lines.push('pd');
-    for (let i = 0; i + 1 < pts.length; i += 2) lines.push(`goto ${turtlePt(pts[i], pts[i + 1])}`);
+    if (pts.length >= 4) {
+      lines.push('pu');
+      move(pts[0], pts[1]);
+      lines.push('pd');
+      for (let i = 2; i + 1 < pts.length; i += 2) move(pts[i], pts[i + 1]);
+    }
   } else if (type === 'line') {
+    lines.push('pu');
+    move(el.x || 0, el.y || 0);
     lines.push('pd');
-    lines.push(`goto ${turtlePt(el.x || 0, el.y || 0)}`);
-    lines.push(`goto ${turtlePt(el.x2 || 0, el.y2 || 0)}`);
+    move(el.x2 || 0, el.y2 || 0);
   } else if (type === 'rect') {
     const x = el.x || 0, y = el.y || 0, w = el.width || 0, h = el.height || 0;
+    lines.push('pu');
+    move(x, y);
     lines.push('pd');
-    for (const [px, py] of [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]]) {
-      lines.push(`goto ${turtlePt(px, py)}`);
+    for (const [px, py] of [[x + w, y], [x + w, y + h], [x, y + h], [x, y]]) {
+      move(px, py);
     }
   } else if (type === 'ellipse') {
     const cx = (el.x || 0) + (el.width || 0) / 2;
     const cy = (el.y || 0) + (el.height || 0) / 2;
     lines.push('pu');
-    lines.push(`goto ${turtlePt(cx, cy)}`);
+    move(cx, cy);
     lines.push(`ellipse ${Math.max(0.5, (el.width || 0) / 2)} ${Math.max(0.5, (el.height || 0) / 2)}`);
   }
   return lines.join('\n');
