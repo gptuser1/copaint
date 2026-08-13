@@ -155,6 +155,12 @@ export class BoardHub extends DurableObject {
       return Response.json({ ok: true, added });
     }
 
+    // 删除画板（清空 DO storage）
+    if (req.method === 'DELETE' && path === '/delete') {
+      await this.ctx.storage.deleteAll();
+      return Response.json({ ok: true });
+    }
+
     // 广播端点（AI 等跨上下文触发）
     if (req.method === 'POST' && path === '/broadcast') {
       const { event, payload } = await req.json() as { event: WsEvent; payload: any };

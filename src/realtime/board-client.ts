@@ -70,6 +70,11 @@ export function batchOps(env: Env, boardId: string, ops: Array<Record<string, an
   }).then((r) => r.json());
 }
 
+// 删除画板（清空 DO storage）
+export function deleteBoard(env: Env, boardId: string): Promise<void> {
+  return call(env, boardId, { path: '/delete', method: 'DELETE' }).then(() => undefined);
+}
+
 // 仅广播（跨上下文，如 AI consumer 在 Worker 侧）
 export function broadcast(env: Env, boardId: string, event: WsEvent, payload: any): Promise<void> {
   return call(env, boardId, {

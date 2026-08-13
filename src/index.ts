@@ -37,6 +37,8 @@ app.get('/api', (c) => {
     name: 'CoPaint',
     version: '0.1.0',
     endpoints: [
+      'GET  /api/boards',
+      'DELETE /api/boards/:id',
       'GET  /api/boards/:id',
       'GET  /api/boards/:id/png',
       'POST /api/boards/:id/elements',

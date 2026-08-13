@@ -99,6 +99,21 @@ export function exportPngUrl(): string {
   return `/api/boards/${encodeURIComponent(currentBoard.id)}/png?token=${encodeURIComponent(currentToken)}`;
 }
 
+// 画板清单记录
+export interface BoardRecord {
+  id: string; width: number; height: number; createdAt: number; updatedAt: number;
+}
+
+// 列出全部画板
+export function listBoards(): Promise<{ boards: BoardRecord[] }> {
+  return req('/api/boards');
+}
+
+// 删除画板
+export function deleteBoard(id: string): Promise<{ ok: boolean }> {
+  return req(`/api/boards/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 // 配置管理
 export interface ConfigItem {
   key: string; desc: string; sensitive: boolean; placeholder?: string; set: boolean; value?: string | null;
