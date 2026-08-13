@@ -59,11 +59,12 @@ function parseColor(v: string): string {
   return '#000000';
 }
 
-// 去掉 // 与 # 行注释，再按空白和花括号切词
+// 去掉注释（// 行内注释，或 # 仅在行首作注释），再按空白和花括号切词
+// 注意：# 仅在行首是注释，行内的 #rrggbb 是 hex 颜色，必须保留
 function tokenize(src: string): string[] {
   const cleaned = src
     .split('\n')
-    .map((l) => l.replace(/\/\/.*$/, '').replace(/#.*$/, ''))
+    .map((l) => l.replace(/\/\/.*$/, '').replace(/^\s*#.*$/, ''))
     .join('\n');
   return cleaned.match(/[{}]|[^\s{}]+/g) || [];
 }

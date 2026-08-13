@@ -35,6 +35,15 @@ describe('turtle', () => {
     expect(s.colors.includes('#2980b9')).toBe(true);
   });
 
+  it('supports hex colors without treating # as a comment', () => {
+    const items = runTurtle(
+      `# 行首注释会被忽略\ncolor #FF8800\npd fd 20`,
+      { startX: 0, startY: 0 },
+    );
+    expect(items.length).toBe(1);
+    expect(items[0].colors[0]).toBe('#ff8800');
+  });
+
   it('circle produces an arc', () => {
     const items = runTurtle(`pd\ncircle 50`, { startX: 200, startY: 150 });
     expect(items.length).toBe(1);
