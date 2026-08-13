@@ -7,6 +7,7 @@ import { mountWs } from './routes/ws';
 import { BoardHub } from './realtime/board-hub';
 import { queueConsumer } from './services/ai';
 import { authMiddleware } from './services/auth';
+import { createTemporaryToken } from './services/token';
 import { AppError } from './domain/errors';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -25,6 +26,16 @@ app.use('/api/*', authMiddleware);
 
 // 鉴权验证
 app.get('/api/verify', (c) => c.json({ ok: true, message: '令牌有效' }));
+
+// 换取临时 token（需真实 token 鉴权）：短时效凭证，可给 agent 或放进 URL，
+// 即使泄露也只是限时签名，无法反推真实 token。默认 24h，上限 30 天。
+app.post('/api/token', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ttl = Number(body.ttl) > 0 ? Math.min(Number(body.ttl), 30 * 86400) : 86400;
+  const secret = await c.env.SECRET.get();
+  const { token, expiresAt } = await createTemporaryToken(secret, ttl);
+  return c.json({ ok: true, token, expiresAt });
+});
 
 // 业务路由
 app.route('/api/boards', boardsApp);

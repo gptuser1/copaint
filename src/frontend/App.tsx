@@ -259,8 +259,13 @@ export function App() {
     }
   }, [instruction, mode, steps, temperature, maxTokens, thinking]);
 
-  const handleExport = useCallback(() => {
-    window.open(api.exportPngUrl(), '_blank');
+  const handleExport = useCallback(async () => {
+    try {
+      const url = await api.exportPngUrl();
+      window.open(url, '_blank');
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
   }, []);
 
   // 测试 AI：直接请求不入队，把原始响应显示到日志区

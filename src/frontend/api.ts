@@ -99,8 +99,15 @@ export function cancelAi(): Promise<{ ok: boolean; epoch: number }> {
   return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai/cancel`, { method: 'POST' });
 }
 
-export function exportPngUrl(): string {
-  return `/api/boards/${encodeURIComponent(currentBoardId)}/png?token=${encodeURIComponent(currentToken)}`;
+// 换取临时 token（短时效，避免真实 token 出现在 URL 或被转发给 agent）
+export function getTemporaryToken(ttl = 300): Promise<{ ok: boolean; token: string; expiresAt: number }> {
+  return req('/api/token', { method: 'POST', body: JSON.stringify({ ttl }) });
+}
+
+// 导出 PNG：URL 带临时 token，而非明文真实 token（TTL 默认 5 分钟）
+export async function exportPngUrl(ttl = 300): Promise<string> {
+  const { token } = await getTemporaryToken(ttl);
+  return `/api/boards/${encodeURIComponent(currentBoardId)}/png?token=${encodeURIComponent(token)}`;
 }
 
 // 配置管理
