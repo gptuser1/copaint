@@ -31,6 +31,11 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
         elements: board.elements,
         stepHint,
       },
+      {
+        temperature: job.temperature,
+        maxTokens: job.maxTokens,
+        thinking: job.thinking,
+      },
     );
 
     const stepLabel = job.mode === 'multi' ? `[步骤 ${job.stepIndex + 1}/${job.totalSteps}]` : '';

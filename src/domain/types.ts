@@ -46,6 +46,10 @@ export interface AiJob {
   stepIndex: number; // 0-based，当前步
   totalSteps: number; // 多步总步数
   delayMs: number;    // 步间间隔
+  // LLM 可调参数（前端下发）
+  temperature?: number;
+  maxTokens?: number;
+  thinking?: boolean;
 }
 
 // WebSocket 广播事件类型

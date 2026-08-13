@@ -73,18 +73,24 @@ export function clearBoard(): Promise<{ ok: boolean }> {
   return req(`/api/boards/${encodeURIComponent(currentBoardId)}/clear`, { method: 'POST' });
 }
 
-export function runAi(instruction: string, mode: 'once' | 'multi', steps: number, delayMs: number): Promise<{ ok: boolean }> {
+export interface AiParams {
+  temperature?: number;
+  maxTokens?: number;
+  thinking?: boolean;
+}
+
+export function runAi(instruction: string, mode: 'once' | 'multi', steps: number, delayMs: number, params?: AiParams): Promise<{ ok: boolean }> {
   return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai`, {
     method: 'POST',
-    body: JSON.stringify({ instruction, mode, steps, delayMs }),
+    body: JSON.stringify({ instruction, mode, steps, delayMs, ...params }),
   });
 }
 
 // 直接测试：不入队，返回 LLM 原始响应
-export function testAi(instruction: string): Promise<{ ok: boolean; raw: string }> {
+export function testAi(instruction: string, params?: AiParams): Promise<{ ok: boolean; raw: string }> {
   return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai/test`, {
     method: 'POST',
-    body: JSON.stringify({ instruction }),
+    body: JSON.stringify({ instruction, ...params }),
   });
 }
 

@@ -37,6 +37,10 @@ export function App() {
   const [instruction, setInstruction] = useState('');
   const [mode, setMode] = useState<'once' | 'multi'>('once');
   const [steps, setSteps] = useState(5);
+  // LLM 可调参数
+  const [temperature, setTemperature] = useState(0.7);
+  const [maxTokens, setMaxTokens] = useState(2048);
+  const [thinking, setThinking] = useState(true);
   const [aiBusy, setAiBusy] = useState(false);
   const [error, setError] = useState('');
   const [showConfig, setShowConfig] = useState(false);
@@ -205,14 +209,14 @@ export function App() {
     setAiBusy(true);
     setError('');
     try {
-      await api.runAi(instr, mode, steps, 2000);
+      await api.runAi(instr, mode, steps, 2000, { temperature, maxTokens, thinking });
       setInstruction('');
     } catch (e) {
       setError(String(e.message || e));
     } finally {
       setAiBusy(false);
     }
-  }, [instruction, mode, steps]);
+  }, [instruction, mode, steps, temperature, maxTokens, thinking]);
 
   const handleExport = useCallback(() => {
     window.open(api.exportPngUrl(), '_blank');
@@ -225,7 +229,7 @@ export function App() {
     setAiBusy(true);
     setError('');
     try {
-      const res = await api.testAi(instr);
+      const res = await api.testAi(instr, { temperature, maxTokens, thinking });
       addLog({ message: `🔬 测试响应: ${res.raw}`, mode: 'once', success: true });
     } catch (e) {
       const msg = String((e as Error).message || e);
@@ -233,7 +237,7 @@ export function App() {
     } finally {
       setAiBusy(false);
     }
-  }, [instruction, addLog]);
+  }, [instruction, addLog, temperature, maxTokens, thinking]);
 
   const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer' };
 
@@ -329,6 +333,22 @@ export function App() {
           {aiBusy ? '处理中…' : '🔬 测试 AI'}
         </button>
         <button onClick={() => setAiLogs([])} style={{ ...btnStyle, border: '1px solid #999' }}>清空日志</button>
+      </div>
+
+      {/* LLM 可调参数 */}
+      <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: '#444' }}>
+        <label title="随机性，0-2，越高越发散">
+          温度
+          <input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} style={{ width: 60, marginLeft: 4, padding: 4 }} />
+        </label>
+        <label title="最大回复 token 数">
+          max_tokens
+          <input type="number" min={64} max={8192} step={64} value={maxTokens} onChange={(e) => setMaxTokens(Number(e.target.value))} style={{ width: 80, marginLeft: 4, padding: 4 }} />
+        </label>
+        <label title="深度思考开关，仅思考类模型生效">
+          <input type="checkbox" checked={thinking} onChange={(e) => setThinking(e.target.checked)} style={{ marginRight: 4 }} />
+          深度思考
+        </label>
       </div>
 
       {/* AI 执行日志 */}

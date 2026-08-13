@@ -18,6 +18,11 @@ aiApp.post('/:id/ai', async (c) => {
   const totalSteps = mode === 'multi' ? Math.max(1, Math.min(10, Number(body.steps) || 5)) : 1;
   const delayMs = Number(body.delayMs) > 0 ? Number(body.delayMs) : 2000;
 
+  // 可调 LLM 参数（前端下发，均可选）
+  const temperature = Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : undefined;
+  const maxTokens = Number.isFinite(Number(body.maxTokens)) ? Number(body.maxTokens) : undefined;
+  const thinking = typeof body.thinking === 'boolean' ? body.thinking : undefined;
+
   const job: AiJob = {
     boardId: id,
     instruction,
@@ -25,6 +30,9 @@ aiApp.post('/:id/ai', async (c) => {
     stepIndex: 0,
     totalSteps,
     delayMs,
+    temperature,
+    maxTokens,
+    thinking,
   };
   await c.env.AI_QUEUE.send(job);
   return c.json({ ok: true, mode, totalSteps });
@@ -55,6 +63,11 @@ aiApp.post('/:id/ai/test', async (c) => {
         height: board.meta.height,
         elements: board.elements,
         stepHint: '测试模式，请直接输出原始 JSON 结果，不要额外解释。',
+      },
+      {
+        temperature: Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : undefined,
+        maxTokens: Number.isFinite(Number(body.maxTokens)) ? Number(body.maxTokens) : undefined,
+        thinking: typeof body.thinking === 'boolean' ? body.thinking : undefined,
       },
     );
 

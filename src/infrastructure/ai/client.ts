@@ -22,6 +22,14 @@ export interface DrawInput {
   stepHint: string;
 }
 
+// LLM 可调参数（可选，未传则用默认）
+export interface LlmParams {
+  temperature?: number;
+  maxTokens?: number;
+  // 深度思考开关（enable_thinking），仅思考类模型支持
+  thinking?: boolean;
+}
+
 // 过滤掉橡皮（白色笔触），避免污染上下文
 // 只取最近 MAX_CONTEXT_ELEMENTS 个元素，保留最靠近视觉重点的
 function prepareContextElements(elements: BoardElement[]): BoardElement[] {
@@ -121,8 +129,20 @@ function num(v: any): number | undefined {
 export async function generateRawContent(
   config: LlmConfig,
   input: DrawInput,
+  params?: LlmParams,
 ): Promise<string> {
   const messages = buildPrompt(input.instruction, input.width, input.height, input.elements, input.stepHint);
+  // 组装可调参数（未传则用默认值）
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages,
+    max_tokens: params?.maxTokens ?? 2048,
+    temperature: params?.temperature ?? 0.7,
+  };
+  // 深度思考开关：仅当显式传入时才带上，避免对不支持思考的模型报错
+  if (typeof params?.thinking === 'boolean') {
+    body.enable_thinking = params.thinking;
+  }
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -132,11 +152,11 @@ export async function generateRawContent(
       // 覆盖 Worker 默认的 cloudflare-workers UA，避免被服务商按来源指纹限流
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
     },
-    body: JSON.stringify({ model: config.model, messages, max_tokens: 2048, temperature: 0.7 }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`LLM error ${res.status}: ${body.slice(0, 300)}`);
+    const errBody = await res.text();
+    throw new Error(`LLM error ${res.status}: ${errBody.slice(0, 300)}`);
   }
   const data: { choices?: Array<{ message?: { content?: string } }> } = await res.json();
   return data?.choices?.[0]?.message?.content || '';
@@ -146,7 +166,8 @@ export async function generateRawContent(
 export async function generateElements(
   config: LlmConfig,
   input: DrawInput,
+  params?: LlmParams,
 ): Promise<Partial<BoardElement>[]> {
-  const content = await generateRawContent(config, input);
+  const content = await generateRawContent(config, input, params);
   return parseElements(content);
 }
