@@ -31,9 +31,19 @@ async function req<T>(path: string, opts?: RequestInit): Promise<T> {
     throw new Error('UNAUTHORIZED');
   }
   if (!res.ok) {
-    let msg = res.statusText;
-    try { msg = (await res.json()).error || msg; } catch { /* ignore */ }
-    throw new Error(msg);
+    // 优先取后端返回的 error/code，其次 statusText，给足排查信息
+    let msg = res.statusText || `HTTP ${res.status}`;
+    let code = '';
+    try {
+      const body = await res.json();
+      if (body && typeof body === 'object') {
+        if (body.error) msg = body.error;
+        if (body.code) code = String(body.code);
+      }
+    } catch { /* 非 JSON 响应，保留 statusText */ }
+    const err = new Error(code ? `${msg} (${code})` : msg) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
   return res.json() as Promise<T>;
 }
