@@ -76,9 +76,10 @@ describe('turtle', () => {
     );
     expect(items.length).toBe(1);
     const p = items[0].points;
-    expect(Math.round(p[0])).toBe(300);
-    expect(Math.round(p[1])).toBe(100);
-    // heading 90 → 朝下，y 增加
-    expect(Math.round(p[p.length - 1])).toBeGreaterThan(100);
+    // 逻辑坐标 setx 300 → 画布 x = 200+300；sety 100 → 画布 y = 150-100
+    expect(Math.round(p[0])).toBe(500);
+    expect(Math.round(p[1])).toBe(50);
+    // 标准 turtle heading 90 = 向上（+y 逻辑）→ 画布 y 减小
+    expect(Math.round(p[p.length - 1])).toBeLessThan(50);
   });
 });

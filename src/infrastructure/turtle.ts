@@ -1,4 +1,6 @@
 // Turtle 解释器：把 turtle 脚本模拟成路径/填充图形
+// 对齐标准 Python turtle 语义：逻辑原点在画布中心，+x 向右、+y 向上，
+// 0° 朝右、角度逆时针为正（left/lt 增大 heading）。输出时映射回画布坐标（左上原点、y 向下）。
 // 支持：fd/bk(移动), lt/rt(转向), pu/pd(抬笔落笔), color(双色)/pencolor/fillcolor,
 //       width(粗细), goto/setx/sety/setheading/home(定位), circle(圆/弧), dot(点),
 //       begin_fill/end_fill(填充), repeat(循环)。纯 JS，无依赖。
@@ -22,9 +24,9 @@ export interface FillShape {
 export type TurtleItem = PenStroke | FillShape;
 
 export interface TurtleOptions {
-  startX: number;
-  startY: number;
-  startHeading?: number; // 度，0=朝右(+x)，顺时针为正(y 向下)
+  startX: number; // 画布中心 x（逻辑原点映射到的画布坐标）
+  startY: number; // 画布中心 y
+  startHeading?: number; // 度，0=朝右(+x)
   maxOps?: number;       // 循环展开的原始操作上限，防止死循环
 }
 
@@ -110,8 +112,9 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   const startHeading = opts.startHeading ?? 0;
   const maxOps = opts.maxOps ?? 8000;
 
-  let x = opts.startX;
-  let y = opts.startY;
+  // 内部用标准 turtle 逻辑坐标：原点在画布中心，+y 向上，heading 0°=右、逆时针为正
+  let x = 0;
+  let y = 0;
   let heading = startHeading;
   let penDown = false;
   let color = '#000000';
@@ -127,6 +130,10 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   let filling = false;
   let fillPoints: number[] = [];
 
+  // 逻辑坐标 → 画布坐标（画布左上原点、y 向下）
+  const toCanvasX = (lx: number): number => opts.startX + lx;
+  const toCanvasY = (ly: number): number => opts.startY - ly;
+
   function flush() {
     if (cur && cur.points.length >= 4) items.push(cur);
     cur = null;
@@ -134,7 +141,7 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
 
   function vertex() {
     if (!cur) cur = { points: [], widths: [], colors: [] };
-    cur.points.push(Number(x.toFixed(1)), Number(y.toFixed(1)));
+    cur.points.push(Number(toCanvasX(x).toFixed(1)), Number(toCanvasY(y).toFixed(1)));
     cur.widths.push(width);
     cur.colors.push(color);
   }
@@ -168,13 +175,14 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   function move(dist: number) {
     if (ops++ > maxOps) return;
     const rad = (heading * Math.PI) / 180;
+    // 标准 turtle：+y 向上为正
     const nx = x + dist * Math.cos(rad);
     const ny = y + dist * Math.sin(rad);
     if (penDown) {
       if (filling) {
-        if (fillPoints.length === 0) fillPoints.push(x, y);
+        if (fillPoints.length === 0) fillPoints.push(toCanvasX(x), toCanvasY(y));
         x = nx; y = ny;
-        fillPoints.push(x, y);
+        fillPoints.push(toCanvasX(x), toCanvasY(y));
       } else {
         if (!cur || cur.points.length === 0) vertex();
         x = nx; y = ny;
@@ -189,9 +197,9 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     if (!Number.isFinite(gx) || !Number.isFinite(gy)) return;
     if (penDown) {
       if (filling) {
-        if (fillPoints.length === 0) fillPoints.push(x, y);
+        if (fillPoints.length === 0) fillPoints.push(toCanvasX(x), toCanvasY(y));
         x = gx; y = gy;
-        fillPoints.push(x, y);
+        fillPoints.push(toCanvasX(x), toCanvasY(y));
       } else {
         if (!cur || cur.points.length === 0) vertex();
         x = gx; y = gy;
@@ -213,7 +221,7 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     const stepLen = Math.abs(r) * (2 * Math.PI / 360) * Math.abs(per);
     for (let k = 0; k < n && ops <= maxOps; k++) {
       move(stepLen);
-      heading -= sgn * per; // r>0 向左(中心在左)，y 向下坐标系里左转即 heading 减小
+      heading += sgn * per; // r>0 向左(逆时针)，标准 turtle y 向上时 heading 增大
     }
   }
 
@@ -224,7 +232,7 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     const pts: number[] = [];
     for (let k = 0; k < n; k++) {
       const a = (k / n) * Math.PI * 2;
-      pts.push(Number((x + r * Math.cos(a)).toFixed(1)), Number((y + r * Math.sin(a)).toFixed(1)));
+      pts.push(Number(toCanvasX(x + r * Math.cos(a)).toFixed(1)), Number(toCanvasY(y + r * Math.sin(a)).toFixed(1)));
     }
     pts.push(pts[0], pts[1]);
     items.push({ points: pts, fill: c, color: c, strokeWidth: 0 });
@@ -268,9 +276,9 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
           break;
         }
         case 'home': {
-          // 回到起点朝东（与初始 heading 一致，简化为朝右）
+          // 回到逻辑原点(0,0) 即画布中心，朝东
           flush();
-          gotoAbs(opts.startX, opts.startY);
+          gotoAbs(0, 0);
           heading = 0;
           break;
         }
