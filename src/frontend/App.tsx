@@ -1,4 +1,5 @@
 // 主应用：令牌登录 + 工具栏 + 画布 + AI 指令 + 配置 + WebSocket 同步
+// 采用单一固定尺寸画板（400×300）
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DrawCanvas } from './DrawCanvas';
 import * as api from './api';
@@ -9,17 +10,11 @@ const TOOLS: { id: ElementType; label: string }[] = [
   { id: 'rect', label: '矩形' },
   { id: 'ellipse', label: '椭圆' },
   { id: 'line', label: '直线' },
-  { id: 'eraser', label: '橡皮' },
 ];
 
-// 预设画板尺寸
-const PRESETS: { id: string; width: number; height: number }[] = [
-  { id: '默认', width: 960, height: 600 },
-  { id: '手机', width: 375, height: 667 },
-  { id: '平板', width: 768, height: 1024 },
-  { id: 'A4竖版', width: 595, height: 842 },
-  { id: 'A4横版', width: 842, height: 595 },
-];
+// 画板固定尺寸
+const BOARD_WIDTH = 400;
+const BOARD_HEIGHT = 300;
 
 // AI 执行日志条目
 interface AiLog {
@@ -46,22 +41,8 @@ export function App() {
   const [showConfig, setShowConfig] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
 
-  // 画板信息 + 新建画板界面
-  const [board, setBoard] = useState({ id: 'default', width: 960, height: 600 });
-  const [showBoardForm, setShowBoardForm] = useState(false);
-  const [bId, setBId] = useState('');
-  const [bPreset, setBPreset] = useState('默认');
-  const [bCustom, setBCustom] = useState(false);
-  const [bWidth, setBWidth] = useState(0);
-  const [bHeight, setBHeight] = useState(0);
-  const [boardTab, setBoardTab] = useState<'create' | 'list'>('create');
-  const [boards, setBoards] = useState<api.BoardRecord[]>([]);
-
-  // 打开画板管理面板时刷新画板列表
-  useEffect(() => {
-    if (!showBoardForm) return;
-    api.listBoards().then((d) => setBoards(d.boards)).catch(() => {});
-  }, [showBoardForm]);
+  // 单一固定画板
+  const board = { id: 'default', width: BOARD_WIDTH, height: BOARD_HEIGHT };
 
   // AI 执行日志
   const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
@@ -95,9 +76,6 @@ export function App() {
     const saved = api.loadSavedToken();
     if (!saved) { setAuthed(false); return; }
     setTokenInput(saved);
-    // 恢复上次画板（id + 尺寸）
-    const b = api.loadSavedBoard();
-    if (b) setBoard({ id: b.id, width: b.width, height: b.height });
     api.verifyToken().then(() => setAuthed(true)).catch(() => {
       api.saveToken('');
       setAuthed(false);
@@ -131,7 +109,6 @@ export function App() {
     api.getBoard().then((s) => {
       if (closed) return;
       setElements(s.elements);
-      setBoard({ id: s.meta.id, width: s.meta.width, height: s.meta.height });
     }).catch(() => {});
     let ws = api.connectWs(handleWs);
     let timer: any;
@@ -156,7 +133,7 @@ export function App() {
     ws.onerror = () => { try { ws.close(); } catch {} };
     return () => { closed = true; clearTimeout(timer); try { ws.close(); } catch {} };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, board.id]);
+  }, [authed]);
 
   const applyWs = (prev: BoardElement[], msg: { event: string; payload: any }): BoardElement[] => {
     switch (msg.event) {
@@ -205,6 +182,16 @@ export function App() {
     });
   }, [color, strokeWidth]);
 
+  // 撤销：移除最后一个元素
+  const handleUndo = useCallback(() => {
+    setElements((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      api.deleteElement(last.id).catch(() => {});
+      return prev.slice(0, -1);
+    });
+  }, []);
+
   const handleClear = useCallback(() => {
     api.clearBoard().then(() => setElements([])).catch((e) => setError(String(e.message || e)));
   }, []);
@@ -226,62 +213,6 @@ export function App() {
 
   const handleExport = useCallback(() => {
     window.open(api.exportPngUrl(), '_blank');
-  }, []);
-
-  // 新建 / 切换画板
-  const handleCreateBoard = useCallback(() => {
-    const id = (bId || bPreset).trim();
-    if (!id) { setError('请输入画板 ID'); return; }
-    let w = board.width, h = board.height;
-    if (bCustom) {
-      if (!(bWidth > 0 && bHeight > 0)) { setError('请输入有效的宽高'); return; }
-      w = Math.round(bWidth); h = Math.round(bHeight);
-    } else {
-      const p = PRESETS.find((x) => x.id === bPreset);
-      if (p) { w = p.width; h = p.height; }
-    }
-    setError('');
-    api.setBoard(id, w, h);
-    setBoard({ id, width: w, height: h });
-    setShowBoardForm(false);
-    setBId('');
-    setBCustom(false);
-    setElements([]);
-    setAiLogs([]);
-  }, [bId, bPreset, bCustom, bWidth, bHeight, board.width, board.height]);
-
-  // 打开已有画板
-  const handleOpenBoard = useCallback((rec: api.BoardRecord) => {
-    api.setBoard(rec.id, rec.width, rec.height);
-    setBoard({ id: rec.id, width: rec.width, height: rec.height });
-    setElements([]);
-    setAiLogs([]);
-    setShowBoardForm(false);
-  }, []);
-
-  // 删除画板
-  const handleRemoveBoard = useCallback(async (rec: api.BoardRecord) => {
-    if (!window.confirm(`确定删除画板"${rec.id}"？其内容将不可恢复。`)) return;
-    try {
-      await api.deleteBoard(rec.id);
-      if (rec.id === board.id) {
-        // 当前画板被删，切回默认
-        api.setBoard('default', 960, 600);
-        setBoard({ id: 'default', width: 960, height: 600 });
-        setElements([]);
-        setAiLogs([]);
-      }
-      const d = await api.listBoards();
-      setBoards(d.boards);
-    } catch (e) {
-      setError(String((e as Error).message || e));
-    }
-  }, [board.id]);
-
-  const fmtTime = useCallback((t: number) => {
-    const d = new Date(t);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }, []);
 
   const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer' };
@@ -323,89 +254,18 @@ export function App() {
         ))}
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="颜色" style={{ width: 34, height: 30, padding: 0, border: 'none' }} />
         <input type="number" min={1} max={30} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} title="粗细" style={{ width: 56 }} />
+        <button onClick={handleUndo} style={{ ...btnStyle, border: '1px solid #999' }}>↩ 撤销</button>
         <button onClick={() => setPanMode((v) => !v)} style={{ ...btnStyle, border: '1px solid #999', background: panMode ? '#fde68a' : '#fff' }}>✋ 平移</button>
         <button onClick={handleClear} style={{ ...btnStyle, border: '1px solid #999' }}>🗑 清空</button>
         <button onClick={handleExport} style={{ ...btnStyle, border: '1px solid #999' }}>⬇ 导出 PNG</button>
-        <button onClick={() => setShowBoardForm((s) => !s)} style={{ ...btnStyle, border: '1px solid #999' }}>🖼 画板</button>
         <button onClick={() => setShowConfig((s) => !s)} style={{ ...btnStyle, border: '1px solid #999' }}>⚙ 配置</button>
         <button onClick={handleLogout} style={{ ...btnStyle, border: '1px solid #999' }}>退出</button>
       </div>
 
       {/* 当前画板信息 */}
       <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
-        当前画板：<b>{board.id}</b>（{board.width} × {board.height}）
+        画板：{board.width} × {board.height}
       </div>
-
-      {/* 画板管理：新建 / 我的画板 分开 */}
-      {showBoardForm && (
-        <div style={{ border: '1px solid #ddd', borderRadius: 6, padding: 12, marginBottom: 10, background: '#fff' }}>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <button onClick={() => setBoardTab('create')} style={{ ...btnStyle, background: boardTab === 'create' ? '#dbeafe' : '#fff', border: '1px solid #999' }}>➕ 新建画板</button>
-            <button onClick={() => setBoardTab('list')} style={{ ...btnStyle, background: boardTab === 'list' ? '#dbeafe' : '#fff', border: '1px solid #999' }}>🗂 我的画板（{boards.length}）</button>
-          </div>
-
-          {boardTab === 'create' && (
-            <div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
-                「画板 ID」是该画板的唯一标识：输入一个<b>没使用过的 ID</b> 即为<u>新建</u>；若该 ID
-                已存在，则<u>直接打开</u>这个已存在的画板。
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                <label style={{ fontWeight: 600 }}>画板 ID</label>
-                <input value={bId} onChange={(e) => setBId(e.target.value)} placeholder="如：会议草图" style={{ padding: 6, flex: 1, minWidth: 180 }} />
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                <label style={{ fontWeight: 600 }}>尺寸参考</label>
-                <span style={{ fontSize: 12, color: '#888' }}>当前屏幕：{window.innerWidth} × {window.innerHeight}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                {PRESETS.map((p) => (
-                  <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="preset"
-                      checked={!bCustom && bPreset === p.id}
-                      onChange={() => { setBPreset(p.id); setBCustom(false); }}
-                    />
-                    {p.id} {p.width}×{p.height}
-                  </label>
-                ))}
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                  <input type="radio" name="preset" checked={bCustom} onChange={() => setBCustom(true)} />
-                  自定义
-                </label>
-              </div>
-              {bCustom && (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                  <label>宽</label>
-                  <input type="number" min={10} value={bWidth || ''} placeholder={String(window.innerWidth)} onChange={(e) => setBWidth(Number(e.target.value))} style={{ width: 90, padding: 6 }} />
-                  <label>高</label>
-                  <input type="number" min={10} value={bHeight || ''} placeholder={String(window.innerHeight)} onChange={(e) => setBHeight(Number(e.target.value))} style={{ width: 90, padding: 6 }} />
-                </div>
-              )}
-              <button onClick={handleCreateBoard} style={{ ...btnStyle, border: '1px solid #999', background: '#4a90d9', color: '#fff' }}>✅ 新建 / 打开画板</button>
-            </div>
-          )}
-
-          {boardTab === 'list' && (
-            <div>
-              {boards.length === 0 && <div style={{ color: '#888', fontSize: 13 }}>还没有画板，切到「新建画板」创建一个。</div>}
-              {boards.map((rec) => (
-                <div key={rec.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #eee' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {rec.id} {rec.id === board.id && <span style={{ color: '#2ecc71', fontSize: 12 }}>（当前）</span>}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#888' }}>{rec.width} × {rec.height}　更新于 {fmtTime(rec.updatedAt)}</div>
-                  </div>
-                  <button onClick={() => handleOpenBoard(rec)} style={{ ...btnStyle, border: '1px solid #999' }}>打开</button>
-                  <button onClick={() => handleRemoveBoard(rec)} style={{ ...btnStyle, border: '1px solid #e74c3c', color: '#e74c3c' }}>删除</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {error && <div style={{ color: '#e74c3c', marginBottom: 8 }}>{error}</div>}
 

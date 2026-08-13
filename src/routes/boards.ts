@@ -7,27 +7,9 @@ import { NotFoundError, ValidationError } from '../domain/errors';
 
 export const boardsApp = new Hono<{ Bindings: Env }>();
 
-// 列出全部画板
-boardsApp.get('/', async (c) => {
-  const boards = await board.listBoards(c.env);
-  return c.json({ boards });
-});
-
-// 删除画板（清空内容 + 移除清单）
-boardsApp.delete('/:id', async (c) => {
-  const id = c.req.param('id');
-  await board.deleteBoard(c.env, id);
-  return c.json({ ok: true });
-});
-
-// 读取画板状态（不存在则创建，可带 ?width= & height= 自定义尺寸）
+// 读取画板状态（不存在则创建）
 boardsApp.get('/:id', async (c) => {
-  const w = Number(c.req.query('width'));
-  const h = Number(c.req.query('height'));
-  const size = (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0)
-    ? { width: Math.round(w), height: Math.round(h) }
-    : undefined;
-  const state = await board.getOrCreate(c.env, c.req.param('id'), size);
+  const state = await board.getOrCreate(c.env, c.req.param('id'));
   return c.json(state);
 });
 

@@ -14,14 +14,9 @@ async function call(env: Env, boardId: string, req: RequestInit & { path: string
   return stubOf(env, boardId).fetch(`http://hub${path}`, { ...init, headers: h });
 }
 
-// 读取或创建画板状态（可带 size 自定义尺寸）
-export function ensureState(
-  env: Env, boardId: string, size?: { width?: number; height?: number }
-): Promise<BoardState> {
-  const q = size && (size.width || size.height)
-    ? `?width=${size.width || ''}&height=${size.height || ''}`
-    : '';
-  return call(env, boardId, { path: '/state' + q, method: 'GET' }).then((r) => r.json());
+// 读取或创建画板状态
+export function ensureState(env: Env, boardId: string): Promise<BoardState> {
+  return call(env, boardId, { path: '/state', method: 'GET' }).then((r) => r.json());
 }
 
 // 读取画板状态；不存在返回 null
@@ -68,11 +63,6 @@ export function batchOps(env: Env, boardId: string, ops: Array<Record<string, an
   return call(env, boardId, {
     path: '/ops', method: 'POST', body: JSON.stringify({ ops }),
   }).then((r) => r.json());
-}
-
-// 删除画板（清空 DO storage）
-export function deleteBoard(env: Env, boardId: string): Promise<void> {
-  return call(env, boardId, { path: '/delete', method: 'DELETE' }).then(() => undefined);
 }
 
 // 仅广播（跨上下文，如 AI consumer 在 Worker 侧）

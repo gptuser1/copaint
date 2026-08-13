@@ -75,70 +75,15 @@ app.get('/api', (c) => {
 <pre>curl -H "Authorization: Bearer \$COP_TOKEN" "http://localhost:8787/api/verify"
 </pre>
 
-<h2>GET <code>/api/boards</code></h2>
-<p>列出当前用户（令牌对应的）所有画板，按更新时间倒序。</p>
-
-<p>成功响应（200 OK）：</p>
-<pre>{
-  "boards": [
-    {
-      "id": "default",
-      "width": 960,
-      "height": 600,
-      "createdAt": 1718000000000,
-      "updatedAt": 1718000000000
-    }
-  ]
-}
-</pre>
-
-<p>响应字段说明：</p>
-<ul>
-  <li><code>id</code>: string — 画板唯一标识</li>
-  <li><code>width</code>: number — 画板宽度（像素）</li>
-  <li><code>height</code>: number — 画板高度（像素）</li>
-  <li><code>createdAt</code>: number — 创建时间（Unix 毫秒时间戳）</li>
-  <li><code>updatedAt</code>: number — 最后更新时间（Unix 毫秒时间戳）</li>
-</ul>
-
-<p>Usage example:</p>
-<pre>curl -H "Authorization: Bearer \$COP_TOKEN" "http://localhost:8787/api/boards"
-</pre>
-
-<h2>DELETE <code>/api/boards/{id}</code></h2>
-<p>永久删除指定画板（清空 DO 存储并移除清单记录），不可恢复。</p>
-
-<p>成功响应（200 OK）：</p>
-<pre>{
-  "ok": true
-}
-</pre>
-
-<p>失败状态码：</p>
-<div class="error-codes">
-<div><code>401</code> — 令牌无效</div>
-<div><code>404</code> — 画板不存在</div>
-</div>
-
-<p>Usage example:</p>
-<pre>curl -X DELETE -H "Authorization: Bearer \$COP_TOKEN" "http://localhost:8787/api/boards/my-board"
-</pre>
-
 <h2>GET <code>/api/boards/{id}</code></h2>
-<p>读取画板完整状态（元素 + 元信息）。若画板不存在，则按查询参数创建新画板。</p>
-
-<p>查询参数：</p>
-<ul>
-  <li><code>?width=</code> — 可选，创建新画板时指定宽度（像素）</li>
-  <li><code>?height=</code> — 可选，创建新画板时指定高度（像素）</li>
-</ul>
+<p>读取画板完整状态（元素 + 元信息）。若画板不存在，则自动创建（固定尺寸 400×300）。</p>
 
 <p>成功响应（200 OK）：</p>
 <pre>{
   "meta": {
     "id": "default",
-    "width": 960,
-    "height": 600,
+    "width": 400,
+    "height": 300,
     "createdAt": 1718000000000,
     "updatedAt": 1718000000000
   },
@@ -162,9 +107,8 @@ app.get('/api', (c) => {
 }
 </pre>
 
-<p>Usage example (创建自定义尺寸画板):</p>
-<pre>curl -H "Authorization: Bearer \$COP_TOKEN" \\
-  "http://localhost:8787/api/boards/new-board?width=768&height=1024"
+<p>Usage example:</p>
+<pre>curl -H "Authorization: Bearer \$COP_TOKEN" "http://localhost:8787/api/boards/default"
 </pre>
 
 <h2>GET <code>/api/boards/{id}/png</code></h2>

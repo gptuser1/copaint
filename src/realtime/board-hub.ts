@@ -4,8 +4,8 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { BoardElement, BoardState, WsEvent } from '../domain/types';
 
-export const BOARD_WIDTH = 960;
-export const BOARD_HEIGHT = 600;
+export const BOARD_WIDTH = 400;
+export const BOARD_HEIGHT = 300;
 const STATE_KEY = 'state';
 
 interface ElementInput {
@@ -13,16 +13,16 @@ interface ElementInput {
 }
 
 export class BoardHub extends DurableObject {
-  // 读取画板状态；不存在则创建（可用 size 自定义尺寸，缺省用默认）
-  async ensureState(size?: { width?: number; height?: number }): Promise<BoardState> {
+  // 读取画板状态；不存在则创建（固定默认尺寸）
+  async ensureState(): Promise<BoardState> {
     const existing = await this.ctx.storage.get<BoardState>(STATE_KEY);
     if (existing) return existing;
     const now = Date.now();
     const state: BoardState = {
       meta: {
         id: this.ctx.id.name!,
-        width: size?.width || BOARD_WIDTH,
-        height: size?.height || BOARD_HEIGHT,
+        width: BOARD_WIDTH,
+        height: BOARD_HEIGHT,
         createdAt: now,
         updatedAt: now,
       },
@@ -69,14 +69,9 @@ export class BoardHub extends DurableObject {
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    // 读状态（不存在则创建，可带 ?width= & height= 自定义尺寸）
+    // 读状态（不存在则创建）
     if (req.method === 'GET' && path === '/state') {
-      const w = Number(url.searchParams.get('width'));
-      const h = Number(url.searchParams.get('height'));
-      const size = (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0)
-        ? { width: Math.round(w), height: Math.round(h) }
-        : undefined;
-      return Response.json(await this.ensureState(size));
+      return Response.json(await this.ensureState());
     }
 
     // 读状态（不存在返回 404）
@@ -153,12 +148,6 @@ export class BoardHub extends DurableObject {
       await this.saveState(state);
       this.broadcast('ops', ops);
       return Response.json({ ok: true, added });
-    }
-
-    // 删除画板（清空 DO storage）
-    if (req.method === 'DELETE' && path === '/delete') {
-      await this.ctx.storage.deleteAll();
-      return Response.json({ ok: true });
     }
 
     // 广播端点（AI 等跨上下文触发）

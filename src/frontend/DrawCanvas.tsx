@@ -107,7 +107,7 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, panMode, onComm
     if (!drawingRef.current || !draft) return;
     const pos = e.target.getStage().getPointerPosition();
     if (!pos) return;
-    if (tool === 'pen' || tool === 'eraser') {
+    if (tool === 'pen') {
       setDraft({ ...draft, points: [...draft.points, pos.x, pos.y] });
     } else {
       const x = Math.min(draft.x, pos.x);
@@ -128,15 +128,9 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, panMode, onComm
     drawingRef.current = false;
     lastPointer.current = null;
     const base = { color, strokeWidth, by: 'user' as const };
-    if (tool === 'pen' || tool === 'eraser') {
+    if (tool === 'pen') {
       if (draft.points.length >= 4) {
-        const el: Partial<BoardElement> & { id?: string } = { type: tool, points: draft.points, color, strokeWidth, by: 'user' };
-        if (tool === 'eraser') {
-          // 橡皮：用白色 + 加粗笔触"擦除"（白底画布上表现为清除）
-          el.color = '#ffffff';
-          el.strokeWidth = Math.max(strokeWidth, 12);
-        }
-        onCommit(el);
+        onCommit({ type: 'pen', points: draft.points, color, strokeWidth, by: 'user' });
       }
     } else if (tool === 'line') {
       if (draft.width > 2 || draft.height > 2) {
@@ -216,8 +210,8 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, panMode, onComm
           {/* 白色画板底（尺寸 = 画板实际尺寸） */}
           <Rect x={0} y={0} width={width} height={height} fill="#ffffff" />
           {elements.map(renderElement)}
-          {draft && (tool === 'pen' || tool === 'eraser') && draft.points.length >= 2 && (
-            <Line points={draft.points} stroke={tool === 'eraser' ? '#ffffff' : color} strokeWidth={tool === 'eraser' ? Math.max(strokeWidth, 12) : strokeWidth} lineCap="round" lineJoin="round" />
+          {draft && tool === 'pen' && draft.points.length >= 2 && (
+            <Line points={draft.points} stroke={color} strokeWidth={strokeWidth} lineCap="round" lineJoin="round" />
           )}
           {draft && tool === 'rect' && (
             <Rect x={draft.x} y={draft.y} width={draft.width} height={draft.height} stroke={color} strokeWidth={strokeWidth} />

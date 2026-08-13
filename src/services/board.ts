@@ -1,7 +1,6 @@
 // 画板用例层：编排 DO 数据访问与实时广播，供路由层调用
-// 画板数据存放在 BoardHub DO 的 storage，Ocean 仅用于配置与画板清单
+// 画板数据存放在 BoardHub DO 的 storage，Ocean 仅用于配置
 import * as client from '../realtime/board-client';
-import { createBoardRepo, type BoardRecord } from '../infrastructure/db/board-repo';
 import { NotFoundError } from '../domain/errors';
 import type { BoardElement, BoardState } from '../domain/types';
 
@@ -10,35 +9,9 @@ export function getState(env: Env, boardId: string): Promise<BoardState | null> 
   return client.getState(env, boardId);
 }
 
-// 读取画板；不存在则创建（可用 size 自定义尺寸，幂等）
-// 创建/尺寸变化时同步登记到画板清单，供列表与删除管理
-export async function getOrCreate(
-  env: Env, boardId: string, size?: { width?: number; height?: number }
-): Promise<BoardState> {
-  const state = await client.ensureState(env, boardId, size);
-  const repo = createBoardRepo(env);
-  const existing = await repo.get(boardId);
-  if (!existing || existing.width !== state.meta.width || existing.height !== state.meta.height) {
-    await repo.upsert({
-      id: state.meta.id,
-      width: state.meta.width,
-      height: state.meta.height,
-      createdAt: state.meta.createdAt,
-      updatedAt: state.meta.updatedAt,
-    });
-  }
-  return state;
-}
-
-// 列出全部画板
-export function listBoards(env: Env): Promise<BoardRecord[]> {
-  return createBoardRepo(env).list();
-}
-
-// 删除画板：移除清单记录 + 清空 DO storage
-export async function deleteBoard(env: Env, boardId: string): Promise<void> {
-  await client.deleteBoard(env, boardId);
-  await createBoardRepo(env).remove(boardId);
+// 读取画板；不存在则创建（固定默认尺寸）
+export function getOrCreate(env: Env, boardId: string): Promise<BoardState> {
+  return client.ensureState(env, boardId);
 }
 
 // 新增元素并广播
