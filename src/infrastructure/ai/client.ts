@@ -128,6 +128,9 @@ export async function generateRawContent(
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
+      Accept: 'application/json',
+      // 覆盖 Worker 默认的 cloudflare-workers UA，避免被服务商按来源指纹限流
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
     },
     body: JSON.stringify({ model: config.model, messages, max_tokens: 2048, temperature: 0.7 }),
   });
