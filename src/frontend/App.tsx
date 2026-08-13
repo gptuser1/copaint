@@ -24,6 +24,8 @@ interface AiLog {
   mode: 'once' | 'multi';
   step?: number;
   totalSteps?: number;
+  success?: boolean;
+  error?: string;
 }
 
 export function App() {
@@ -124,6 +126,8 @@ export function App() {
           mode: p.mode || 'once',
           step: p.step,
           totalSteps: p.totalSteps,
+          success: !!p.success,
+          error: p.error || '',
         });
         return;
       }
@@ -337,7 +341,8 @@ export function App() {
               <span style={{ color: log.mode === 'multi' ? '#7fd5ff' : '#7ee787' }}>
                 {log.mode === 'multi' && log.step != null ? `[步骤 ${log.step + 1}/${log.totalSteps}] ` : ''}
               </span>
-              {log.message}
+              <span style={{ color: log.success === false ? '#ff6b6b' : '#d6d6d6' }}>{log.message}</span>
+              {log.error && <div style={{ color: '#ff8787', marginLeft: 8, whiteSpace: 'pre-wrap' }}>{log.error}</div>}
             </div>
           ))}
         </div>

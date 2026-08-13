@@ -14,48 +14,66 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
     ? `这是第 ${job.stepIndex + 1}/${job.totalSteps} 步。基于当前画布，本次只画出这一步需要的少量元素（1-2个）。`
     : '一次性画出指令描述的全部内容（可多个元素）。';
 
-  // LLM 必需配置，未配置即报错（无兜底）
-  const [apiKey, baseUrl, model] = await Promise.all([
-    requireConfig(env, 'openai_api_key'),
-    requireConfig(env, 'openai_base_url'),
-    requireConfig(env, 'openai_model'),
-  ]);
+  try {
+    // LLM 必需配置，未配置即报错（无兜底）
+    const [apiKey, baseUrl, model] = await Promise.all([
+      requireConfig(env, 'openai_api_key'),
+      requireConfig(env, 'openai_base_url'),
+      requireConfig(env, 'openai_model'),
+    ]);
 
-  const partials = await generateElements(
-    { apiKey, baseUrl, model },
-    {
+    const partials = await generateElements(
+      { apiKey, baseUrl, model },
+      {
+        instruction: job.instruction,
+        width: board.meta.width,
+        height: board.meta.height,
+        elements: board.elements,
+        stepHint,
+      },
+    );
+
+    const stepLabel = job.mode === 'multi' ? `[步骤 ${job.stepIndex + 1}/${job.totalSteps}]` : '';
+    const logMsg = `${stepLabel} 指令: "${job.instruction}" → 生成了 ${partials.length} 个元素`;
+
+    // 广播 AI 日志（成功）
+    await broadcast(env, job.boardId, 'ai-log', {
+      step: job.stepIndex,
+      totalSteps: job.totalSteps,
+      mode: job.mode,
       instruction: job.instruction,
-      width: board.meta.width,
-      height: board.meta.height,
-      elements: board.elements,
-      stepHint,
-    },
-  );
+      elementCount: partials.length,
+      message: logMsg,
+      success: true,
+    });
 
-  const stepLabel = job.mode === 'multi' ? `[步骤 ${job.stepIndex + 1}/${job.totalSteps}]` : '';
-  const logMsg = `${stepLabel} 指令: "${job.instruction}" → 生成了 ${partials.length} 个元素`;
+    if (partials.length === 0) return;
 
-  // 广播 AI 日志
-  await broadcast(env, job.boardId, 'ai-log', {
-    step: job.stepIndex,
-    totalSteps: job.totalSteps,
-    mode: job.mode,
-    instruction: job.instruction,
-    elementCount: partials.length,
-    message: logMsg,
-  });
+    // 写入元素（DO 内部会广播 'add'）
+    for (const p of partials) {
+      await addElement(env, job.boardId, p as Omit<BoardElement, 'createdAt' | 'id'> & { id?: string });
+    }
 
-  if (partials.length === 0) return;
-
-  // 写入元素（DO 内部会广播 'add'）
-  for (const p of partials) {
-    await addElement(env, job.boardId, p as Omit<BoardElement, 'createdAt' | 'id'> & { id?: string });
-  }
-
-  // 多步：若还有后续步，延迟重投递（delayMs 秒后）
-  if (job.mode === 'multi' && job.stepIndex + 1 < job.totalSteps) {
-    const next: AiJob = { ...job, stepIndex: job.stepIndex + 1 };
-    await env.AI_QUEUE.send(next, { delaySeconds: Math.max(1, job.delayMs / 1000) });
+    // 多步：若还有后续步，延迟重投递（delayMs 秒后）
+    if (job.mode === 'multi' && job.stepIndex + 1 < job.totalSteps) {
+      const next: AiJob = { ...job, stepIndex: job.stepIndex + 1 };
+      await env.AI_QUEUE.send(next, { delaySeconds: Math.max(1, job.delayMs / 1000) });
+    }
+  } catch (e) {
+    // 广播错误到前端日志以便查看
+    const errMsg = String(e instanceof Error ? e.message : e);
+    const stepLabel = job.mode === 'multi' ? `[步骤 ${job.stepIndex + 1}/${job.totalSteps}]` : '';
+    await broadcast(env, job.boardId, 'ai-log', {
+      step: job.stepIndex,
+      totalSteps: job.totalSteps,
+      mode: job.mode,
+      instruction: job.instruction,
+      message: `${stepLabel} ❌ 失败: ${errMsg}`,
+      success: false,
+      error: errMsg,
+    });
+    // 重新抛出以便 queue 执行重试
+    throw e;
   }
 }
 
