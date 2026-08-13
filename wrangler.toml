@@ -32,7 +32,7 @@ class_name = "BoardHub"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["BoardHub"]
+new_sqlite_classes = ["BoardHub"]
 
 [[secrets_store_secrets]]
 store_id = "4cac25c20606481c9e202263d45a1d03"
