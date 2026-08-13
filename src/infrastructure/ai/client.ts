@@ -93,10 +93,11 @@ function buildFixedSystem(boardWidth: number, boardHeight: number): string {
     + '  hex: #rrggbb 或 #rgb（如 #e74c3c / #e7c）\n'
     + '  names: red green blue black white yellow orange purple pink brown gray grey cyan teal gold silver navy lime magenta\n'
     + 'output:\n'
-    + '  只输出脚本，无解释/前言/JSON/markdown 围栏\n'
-    + '  一行一条命令，参数空格分隔，数字裸写\n'
+    + '  响应必须用 <script> 包裹 turtle 脚本；分步任务的中间步再附加 <next> 包裹给下一步的自然语言指令\n'
+    + '  脚本内一条命令一行，参数空格分隔，数字裸写\n'
     + '  禁止变量/等号/数学表达式/函数写法(如 fd(50))/括号/引号\n'
-    + '  只允许上述命令，禁止自创'
+    + '  只允许上述命令，禁止自创\n'
+    + '  <next> 是一句中文，说明下一步画什么（形状/颜色/位置），避免与 existing 重叠；最后一步不要写 <next>'
   );
 }
 
@@ -118,21 +119,25 @@ export function buildTurtlePrompt(
   ];
 }
 
-// 从 LLM 原始输出里剥掉代码块围栏，得到纯脚本
-function extractTurtleScript(raw: string): string {
-  const fence = raw.match(/```(?:turtle|python)?\n?([\s\S]*?)```/);
-  if (fence) return fence[1];
-  return raw;
+// 解析 LLM 响应：<script> 包裹的 turtle 脚本 + 可选 <next> 包裹的下一步指令。
+// 无 <script> 时把整体当脚本，并兼容 ``` 代码块围栏（单次/旧响应兜底）。
+export function parseTurtleResponse(raw: string): { script: string; next: string } {
+  const scriptM = raw.match(/<script>([\s\S]*?)<\/script>/i);
+  const nextM = raw.match(/<next>([\s\S]*?)<\/next>/i);
+  let script = scriptM ? scriptM[1].trim() : raw.trim();
+  if (!scriptM) {
+    const fence = script.match(/```(?:turtle|python)?\n?([\s\S]*?)```/);
+    if (fence) script = fence[1].trim();
+  }
+  return { script, next: nextM ? nextM[1].trim() : '' };
 }
 
-// 调用 LLM，返回 turtle 脚本原始文本（供测试/调试）
-export async function generateTurtleScript(
+// 组装可调参数并调用 LLM，返回原始响应文本
+async function callLLM(
   config: LlmConfig,
-  input: DrawInput,
+  messages: Array<{ role: 'system' | 'user'; content: string }>,
   params?: LlmParams,
 ): Promise<string> {
-  const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint, input.elements);
-  // 组装可调参数（未传则用默认值）
   const body: Record<string, unknown> = {
     model: config.model,
     messages,
@@ -161,21 +166,33 @@ export async function generateTurtleScript(
     throw new Error(`LLM error ${res.status}: ${errBody.slice(0, 300)}`);
   }
   const data: { choices?: Array<{ message?: { content?: string } }> } = await res.json();
-  return extractTurtleScript(data?.choices?.[0]?.message?.content || '');
+  return data?.choices?.[0]?.message?.content || '';
 }
 
-// 调用 LLM 生成 turtle 脚本并落笔成元素（内置 AI 唯一绘制路径）
+// 调用 LLM，返回 turtle 脚本（供测试/调试，只取 <script> 部分）
+export async function generateTurtleScript(
+  config: LlmConfig,
+  input: DrawInput,
+  params?: LlmParams,
+): Promise<string> {
+  const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint, input.elements);
+  return parseTurtleResponse(await callLLM(config, messages, params)).script;
+}
+
+// 调用 LLM 生成 turtle 脚本并落笔成元素（内置 AI 唯一绘制路径）。
+// 返回本步生成的元素 + 给下一步的自然语言指令（多步任务用 next 驱动下一步）。
 export async function generateTurtleElements(
   config: LlmConfig,
   input: DrawInput,
   params?: LlmParams,
-): Promise<Partial<BoardElement>[]> {
-  const script = await generateTurtleScript(config, input, params);
-  if (!script.trim()) return [];
+): Promise<{ elements: Partial<BoardElement>[]; next: string }> {
+  const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint, input.elements);
+  const { script, next } = parseTurtleResponse(await callLLM(config, messages, params));
+  if (!script.trim()) return { elements: [], next };
   const items = runTurtle(script, {
     startX: input.width / 2,
     startY: input.height / 2,
     startHeading: 0,
   });
-  return turtleToElements(items, { id: `ai_${Date.now().toString(36)}` });
+  return { elements: turtleToElements(items, { id: `ai_${Date.now().toString(36)}` }), next };
 }

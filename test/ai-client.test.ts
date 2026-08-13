@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTurtlePrompt } from '../src/infrastructure/ai/client';
+import { buildTurtlePrompt, parseTurtleResponse } from '../src/infrastructure/ai/client';
 import type { BoardElement } from '../src/domain/types';
 
 const emptyExisting: BoardElement[] = [];
@@ -27,9 +27,10 @@ describe('ai turtle prompt', () => {
   });
 
   it('demands strict output format', () => {
-    expect(sys).toContain('只输出');
+    expect(sys).toContain('<script>');
+    expect(sys).toContain('<next>');
     expect(sys).toContain('禁止');
-    expect(sys).toContain('markdown');
+    expect(sys).toContain('只允许');
   });
 
   it('covers core commands in the reference', () => {
@@ -46,8 +47,8 @@ describe('ai turtle prompt', () => {
       { id: '3', type: 'pen', points: [350, 250, 360, 260, 370, 270], color: '#000', strokeWidth: 3, by: 'user', createdAt: 3 },
     ];
     const [sys, user] = buildTurtlePrompt('test', 800, 600, 'hint', existing);
-    // 动态内容只出现在 user 末尾，system 保持固定前缀
-    expect(sys.content).not.toContain('existing');
+    // 动态内容只出现在 user 末尾，system 保持固定前缀（不含元素摘要行）
+    expect(sys.content).not.toContain('中心(');
     expect(user.content).toContain('existing');
     expect(user.content).toContain('rect');
     expect(user.content).toContain('line');
@@ -67,5 +68,27 @@ describe('ai turtle prompt', () => {
     ])[0].content;
     // system 固定，不随 stepHint/existing 变化 → 前缀可命中缓存
     expect(a).toBe(b);
+  });
+});
+
+describe('parseTurtleResponse', () => {
+  it('extracts script and next from tagged response', () => {
+    const r = parseTurtleResponse('<script>\npd fd 100\nlt 90\n</script>\n<next>画屋顶，用红色填充</next>');
+    expect(r.script).toBe('pd fd 100\nlt 90');
+    expect(r.next).toBe('画屋顶，用红色填充');
+  });
+
+  it('falls back to bare script when no tags', () => {
+    const r = parseTurtleResponse('pd fd 50');
+    expect(r.script).toBe('pd fd 50');
+    expect(r.next).toBe('');
+  });
+
+  it('handles code fence fallback', () => {
+    expect(parseTurtleResponse('```turtle\npd fd 50\n```').script).toBe('pd fd 50');
+  });
+
+  it('returns empty next when <next> missing', () => {
+    expect(parseTurtleResponse('<script>pd fd 10</script>').next).toBe('');
   });
 });

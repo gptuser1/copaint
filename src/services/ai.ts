@@ -26,8 +26,8 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
   }
 
   const stepHint = job.mode === 'multi'
-    ? `这是第 ${job.stepIndex + 1}/${job.totalSteps} 步：参考上面 existing 列出的已画内容，只补本步骤要求的部分，避免与其重叠，不要重复画已有的东西。`
-    : '参考上面 existing 列出的已画内容，用一条 turtle 脚本画出指令要求的全部内容（可在此基础上补充/延续）。';
+    ? `这是第 ${job.stepIndex + 1}/${job.totalSteps} 步：参考 existing，只补本步要求的部分，避免重叠，不要重复已有内容；同时用 <next> 给出下一步指令。`
+    : '参考 existing，用 <script> 包裹一条 turtle 脚本，画出指令要求的全部内容。';
 
   try {
     // LLM 必需配置，未配置即报错（无兜底）
@@ -37,7 +37,7 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
       requireConfig(env, 'openai_model'),
     ]);
 
-    const partials = await generateTurtleElements(
+    const { elements: partials, next } = await generateTurtleElements(
       { apiKey, baseUrl, model },
       {
         instruction: job.instruction,
@@ -54,7 +54,8 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
     );
 
     const stepLabel = job.mode === 'multi' ? `[步骤 ${job.stepIndex + 1}/${job.totalSteps}]` : '';
-    const logMsg = `${stepLabel} 指令: "${job.instruction}" → 生成了 ${partials.length} 个元素`;
+    let logMsg = `${stepLabel} 指令: "${job.instruction}" → 生成了 ${partials.length} 个元素`;
+    if (next) logMsg += `；下一步: ${next}`;
 
     // 广播 AI 日志（成功）
     await broadcast(env, job.boardId, 'ai-log', {
@@ -74,10 +75,11 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
       await addElement(env, job.boardId, p as Omit<BoardElement, 'createdAt' | 'id'> & { id?: string });
     }
 
-    // 多步：若还有后续步，延迟重投递（delayMs 秒后）
+    // 多步：若还有后续步，延迟重投递（delayMs 秒后），用 AI 指定的 next 作为下一步指令
     if (job.mode === 'multi' && job.stepIndex + 1 < job.totalSteps) {
-      const next: AiJob = { ...job, stepIndex: job.stepIndex + 1 };
-      await env.AI_QUEUE.send(next, { delaySeconds: Math.max(1, job.delayMs / 1000) });
+      const nextInstruction = next || job.instruction; // 没有 next 时兜底用原指令
+      const nextJob: AiJob = { ...job, stepIndex: job.stepIndex + 1, instruction: nextInstruction };
+      await env.AI_QUEUE.send(nextJob, { delaySeconds: Math.max(1, job.delayMs / 1000) });
     }
   } catch (e) {
     // 广播错误到前端日志以便查看

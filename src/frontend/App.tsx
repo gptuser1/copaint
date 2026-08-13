@@ -81,9 +81,9 @@ export function App() {
   const [instruction, setInstruction] = useState('');
   const [mode, setMode] = useState<'once' | 'multi'>('once');
   const [steps, setSteps] = useState(5);
-  // LLM 可调参数
-  const [temperature, setTemperature] = useState(0.7);
-  const [maxTokens, setMaxTokens] = useState(2048);
+  // LLM 可调参数（字符串态，允许输入框删到空，提交时再解析成数字）
+  const [temperature, setTemperature] = useState('0.7');
+  const [maxTokens, setMaxTokens] = useState('2048');
   const [thinking, setThinking] = useState(true);
   const [aiBusy, setAiBusy] = useState(false);
   const [error, setError] = useState('');
@@ -234,13 +234,23 @@ export function App() {
     api.clearBoard().then(() => setElements([])).catch((e) => setError(String(e.message || e)));
   }, []);
 
+  // 数字输入：空串/非法回退默认值
+  const parseNum = (s: string, fallback: number): number => {
+    const n = Number(s);
+    return s.trim() !== '' && Number.isFinite(n) ? n : fallback;
+  };
+
   const handleAi = useCallback(async () => {
     const instr = instruction.trim();
     if (!instr) return;
     setAiBusy(true);
     setError('');
     try {
-      await api.runAi(instr, mode, steps, 2000, { temperature, maxTokens, thinking });
+      await api.runAi(instr, mode, steps, 2000, {
+        temperature: parseNum(temperature, 0.7),
+        maxTokens: parseNum(maxTokens, 2048),
+        thinking,
+      });
       setInstruction('');
     } catch (e) {
       setError(String(e.message || e));
@@ -260,7 +270,11 @@ export function App() {
     setAiBusy(true);
     setError('');
     try {
-      const res = await api.testAi(instr, { temperature, maxTokens, thinking });
+      const res = await api.testAi(instr, {
+        temperature: parseNum(temperature, 0.7),
+        maxTokens: parseNum(maxTokens, 2048),
+        thinking,
+      });
       addLog({ message: `🔬 测试响应: ${res.raw}`, mode: 'once', success: true });
     } catch (e) {
       const msg = String((e as Error).message || e);
@@ -382,11 +396,11 @@ export function App() {
       <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: '#444' }}>
         <label title="随机性，0-2，越高越发散">
           温度
-          <input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} style={{ width: 60, marginLeft: 4, padding: 4 }} />
+          <input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(e) => setTemperature(e.target.value)} style={{ width: 60, marginLeft: 4, padding: 4 }} />
         </label>
         <label title="最大回复 token 数">
           max_tokens
-          <input type="number" min={64} max={8192} step={64} value={maxTokens} onChange={(e) => setMaxTokens(Number(e.target.value))} style={{ width: 80, marginLeft: 4, padding: 4 }} />
+          <input type="number" min={64} max={8192} step={64} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} style={{ width: 80, marginLeft: 4, padding: 4 }} />
         </label>
         <label title="深度思考开关，仅思考类模型生效">
           <input type="checkbox" checked={thinking} onChange={(e) => setThinking(e.target.checked)} style={{ marginRight: 4 }} />
