@@ -47,8 +47,8 @@ export interface BoardState {
 export interface AiJob {
   boardId: string;
   instruction: string;
-  // 'once': 单次 | 'multi': 多步链式 | 'turtle': turtle 脚本绘制
-  mode: 'once' | 'multi' | 'turtle';
+  // 'once': 单次 | 'multi': 多步链式（内置 AI 一律用 turtle 脚本绘制）
+  mode: 'once' | 'multi';
   stepIndex: number; // 0-based，当前步
   totalSteps: number; // 多步总步数
   delayMs: number;    // 步间间隔

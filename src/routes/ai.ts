@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import { getState, getAiEpoch, cancelAiTasks } from '../realtime/board-client';
 import { requireConfig } from '../services/config';
-import { generateRawContent } from '../infrastructure/ai/client';
+import { generateTurtleScript } from '../infrastructure/ai/client';
 import { NotFoundError, ValidationError, AppError } from '../domain/errors';
 import type { AiJob } from '../domain/types';
 
@@ -14,8 +14,8 @@ aiApp.post('/:id/ai', async (c) => {
   const instruction = (body.instruction || '').trim();
   if (!instruction) throw new ValidationError('instruction required');
 
-  const mode: 'once' | 'multi' | 'turtle' =
-    body.mode === 'multi' ? 'multi' : body.mode === 'turtle' ? 'turtle' : 'once';
+  const mode: 'once' | 'multi' =
+    body.mode === 'multi' ? 'multi' : 'once';
   const totalSteps = mode === 'multi' ? Math.max(1, Math.min(10, Number(body.steps) || 5)) : 1;
   const delayMs = Number(body.delayMs) > 0 ? Number(body.delayMs) : 2000;
 
@@ -64,14 +64,14 @@ aiApp.post('/:id/ai/test', async (c) => {
       requireConfig(c.env, 'openai_model'),
     ]);
 
-    const raw = await generateRawContent(
+    const raw = await generateTurtleScript(
       { apiKey, baseUrl, model },
       {
         instruction,
         width: board.meta.width,
         height: board.meta.height,
         elements: board.elements,
-        stepHint: '测试模式，请直接输出原始 JSON 结果，不要额外解释。',
+        stepHint: '测试模式，请直接输出 turtle 脚本，不要解释、不要 markdown 代码块。',
       },
       {
         temperature: Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : undefined,

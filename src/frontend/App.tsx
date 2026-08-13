@@ -70,7 +70,7 @@ export function App() {
   const [color, setColor] = useState('#000000');
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [instruction, setInstruction] = useState('');
-  const [mode, setMode] = useState<'once' | 'multi' | 'turtle'>('once');
+  const [mode, setMode] = useState<'once' | 'multi'>('once');
   const [steps, setSteps] = useState(5);
   // LLM 可调参数
   const [temperature, setTemperature] = useState(0.7);
@@ -349,10 +349,9 @@ export function App() {
           placeholder="输入指令，如：画一个红色的太阳在左上角"
           style={{ flex: 1, minWidth: 280, padding: 6 }}
         />
-        <select value={mode} onChange={(e) => setMode(e.target.value as 'once' | 'multi' | 'turtle')} style={{ padding: 6 }}>
+        <select value={mode} onChange={(e) => setMode(e.target.value as 'once' | 'multi')} style={{ padding: 6 }}>
           <option value="once">单次</option>
           <option value="multi">分步</option>
-          <option value="turtle">🐢 画笔</option>
         </select>
         {mode === 'multi' && (
           <>

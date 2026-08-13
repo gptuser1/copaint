@@ -1,7 +1,7 @@
 // AI 用例层：执行 AI 绘制任务（单次 / 多步链式）+ Queues 消费入口
 // 读画板与写元素都走 BoardHub DO，配置走 Ocean
 import { getState, addElement, broadcast, getAiEpoch } from '../realtime/board-client';
-import { generateElements, generateTurtleElements } from '../infrastructure/ai/client';
+import { generateTurtleElements } from '../infrastructure/ai/client';
 import { requireConfig } from './config';
 import type { AiJob, BoardElement } from '../domain/types';
 
@@ -26,10 +26,8 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
   }
 
   const stepHint = job.mode === 'multi'
-    ? `这是第 ${job.stepIndex + 1}/${job.totalSteps} 步。基于当前画布，本次只画出这一步需要的少量元素（1-2个）。`
-    : job.mode === 'turtle'
-      ? '用 turtle 脚本一次性画出指令描述的内容，可结合颜色、粗细与 repeat 表现创意。'
-      : '一次性画出指令描述的全部内容（可多个元素）。';
+    ? `这是第 ${job.stepIndex + 1}/${job.totalSteps} 步。基于当前画布，本次只画出这一步需要的少量内容（1-2 个图案）。`
+    : '用 turtle 脚本一次性画出指令描述的内容，可结合颜色、粗细、填充与 repeat 表现创意。';
 
   try {
     // LLM 必需配置，未配置即报错（无兜底）
@@ -39,8 +37,7 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
       requireConfig(env, 'openai_model'),
     ]);
 
-    const gen = job.mode === 'turtle' ? generateTurtleElements : generateElements;
-    const partials = await gen(
+    const partials = await generateTurtleElements(
       { apiKey, baseUrl, model },
       {
         instruction: job.instruction,
