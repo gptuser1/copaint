@@ -1,7 +1,7 @@
 // LLM 客户端：把自然语言指令转成 turtle 脚本，再落笔成画板元素
 // 纯基础设施实现，配置由调用方（services/ai）传入，避免向上依赖
 import type { BoardElement } from '../../domain/types';
-import { runTurtle, turtleToElements } from '../turtle';
+import { runTurtle, turtleToElements, isClearItem } from '../turtle';
 
 export interface LlmConfig {
   apiKey: string;
@@ -88,15 +88,20 @@ function buildFixedSystem(boardWidth: number, boardHeight: number): string {
     + '  定位: goto <x> <y> / setx <x> / sety <y> / setheading <deg> / home\n'
     + '  图形: circle <r> [弧度] / dot <直径> [色] / rect <宽> <高> / ellipse <rx> <ry> / line <x1> <y1> <x2> <y2>\n'
     + '  填充: begin_fill ... end_fill\n'
-    + '  循环: repeat <n> { ... }\n'
+    + '  循环: repeat <n> { ... } / while <条件> { ... } / for (i = 0; i < n; i = i + 1) { ... }\n'
+    + '  条件: if <条件> { ... } else { ... }（支持 else if 链）\n'
+    + '  变量: x = <表达式>（如 size = 50, x = x + 1）\n'
+    + '  数学函数: sqrt sin cos tan abs pow(a,b) floor ceil round min(a,b) max(a,b) log exp mod(a,b) random(a,b) atan2\n'
+    + '  自定义函数: to name(参数列表) { ... } 定义；name(参数) 调用；return <表达式> 返回数值\n'
+    + '  清空: clear（清空画布已有内容，再从当前位置重新绘制）\n'
     + 'colors:\n'
     + '  hex: #rrggbb 或 #rgb（如 #e74c3c / #e7c）\n'
     + '  names: red green blue black white yellow orange purple pink brown gray grey cyan teal gold silver navy lime magenta\n'
     + 'output:\n'
     + '  响应必须用 <script> 包裹 turtle 脚本；分步任务的中间步再附加 <next> 包裹给下一步的自然语言指令\n'
-    + '  脚本内一条命令一行，参数空格分隔，数字裸写\n'
-    + '  禁止变量/等号/数学表达式/函数写法(如 fd(50))/括号/引号\n'
-    + '  只允许上述命令，禁止自创\n'
+    + '  脚本内一条语句一行；表达式用运算符 + - * / % 与括号；多参数命令可用逗号分隔（如 goto 10, -20）\n'
+    + '  允许变量/表达式/条件/循环/函数写法；颜色参数直接写颜色名或 hex\n'
+    + '  只允许上述命令与内置函数，禁止自创\n'
     + '  <next> 是一句中文，说明下一步画什么（形状/颜色/位置），避免与 existing 重叠；最后一步不要写 <next>'
   );
 }
@@ -180,19 +185,24 @@ export async function generateTurtleScript(
 }
 
 // 调用 LLM 生成 turtle 脚本并落笔成元素（内置 AI 唯一绘制路径）。
-// 返回本步生成的元素 + 给下一步的自然语言指令（多步任务用 next 驱动下一步）。
+// 返回本步生成的元素 + 给下一步的自然语言指令（多步任务用 next 驱动下一步）
+// + cleared（脚本含 clear 指令，执行前需先清空画布）。
 export async function generateTurtleElements(
   config: LlmConfig,
   input: DrawInput,
   params?: LlmParams,
-): Promise<{ elements: Partial<BoardElement>[]; next: string }> {
+): Promise<{ elements: Partial<BoardElement>[]; next: string; cleared: boolean }> {
   const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint, input.elements);
   const { script, next } = parseTurtleResponse(await callLLM(config, messages, params));
-  if (!script.trim()) return { elements: [], next };
+  if (!script.trim()) return { elements: [], next, cleared: false };
   const items = runTurtle(script, {
     startX: input.width / 2,
     startY: input.height / 2,
     startHeading: 0,
   });
-  return { elements: turtleToElements(items, { id: `ai_${Date.now().toString(36)}` }), next };
+  return {
+    elements: turtleToElements(items, { id: `ai_${Date.now().toString(36)}` }),
+    next,
+    cleared: items.some(isClearItem),
+  };
 }

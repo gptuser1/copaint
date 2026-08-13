@@ -3,7 +3,12 @@
 // 0° 朝右、角度逆时针为正（left/lt 增大 heading）。输出时映射回画布坐标（左上原点、y 向下）。
 // 支持：fd/bk(移动), lt/rt(转向), pu/pd(抬笔落笔), color(双色)/pencolor/fillcolor,
 //       width(粗细), goto/setx/sety/setheading/home(定位), circle(圆/弧), dot(点),
-//       rect/ellipse/line(几何图形), begin_fill/end_fill(填充), repeat(循环)。纯 JS，无依赖。
+//       rect/ellipse/line(几何图形), begin_fill/end_fill(填充),
+//       流程控制: repeat/while/for/if...else，
+//       变量赋值: x = 表达式（+ - * / %、比较、逻辑、括号），
+//       数学函数: sqrt sin cos tan abs pow floor ceil round random min max log exp mod atan2，
+//       自定义函数: to name(a b) { ... } 定义、name(a, b) 调用、return 返回值，
+//       clear(清空画布后重画)。纯 JS，无依赖。
 import type { BoardElement } from '../domain/types';
 
 // 一段连续的落笔笔画（pen 元素的数据来源）
@@ -21,13 +26,23 @@ export interface FillShape {
   strokeWidth: number;
 }
 
-export type TurtleItem = PenStroke | FillShape;
+// 清空画布标记：出现在 items 中表示执行时应先清空画布已有内容
+export interface ClearItem {
+  type: 'clear';
+}
+
+export type TurtleItem = PenStroke | FillShape | ClearItem;
+
+// 类型守卫：判断是否为清空标记（只有 ClearItem 带 type 字段）
+export function isClearItem(it: TurtleItem): it is ClearItem {
+  return 'type' in it && it.type === 'clear';
+}
 
 export interface TurtleOptions {
   startX: number; // 画布中心 x（逻辑原点映射到的画布坐标）
   startY: number; // 画布中心 y
   startHeading?: number; // 度，0=朝右(+x)
-  maxOps?: number;       // 循环展开的原始操作上限，防止死循环
+  maxOps?: number;       // 解释器步数上限，防止死循环
 }
 
 const COLOR_NAMES: Record<string, string> = {
@@ -37,6 +52,7 @@ const COLOR_NAMES: Record<string, string> = {
   silver: '#c0c0c0', navy: '#000080', lime: '#00ff00', magenta: '#ff00ff',
 };
 
+// 全部命令关键字（含流程控制），作为命令参数解析的结束边界
 const COMMANDS = new Set([
   'fd', 'forward', 'bk', 'back', 'lt', 'left', 'rt', 'right',
   'pu', 'penup', 'up', 'pd', 'pendown', 'down',
@@ -44,7 +60,8 @@ const COMMANDS = new Set([
   'goto', 'setpos', 'setx', 'sety', 'setheading', 'seth', 'home',
   'circle', 'dot', 'rect', 'rectangle', 'ellipse', 'oval', 'line',
   'begin_fill', 'bf', 'end_fill', 'ef',
-  'repeat', 'pos', 'heading', 'isdown',
+  'repeat', 'while', 'for', 'if', 'else', 'to', 'return', 'clear',
+  'pos', 'heading', 'isdown',
 ]);
 
 function expandHex(h: string): string {
@@ -59,55 +76,308 @@ function parseColor(v: string): string {
   return '#000000';
 }
 
-// 去掉注释（// 行内注释，或 # 仅在行首作注释），再按空白和花括号切词
-// 注意：# 仅在行首是注释，行内的 #rrggbb 是 hex 颜色，必须保留
-function tokenize(src: string): string[] {
+// 表达式求值结果：数字 / 颜色字符串 / 布尔
+type Value = number | string | boolean;
+
+function toNum(v: Value): number {
+  if (typeof v === 'number') return v;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function truthy(v: Value): boolean {
+  return !!v;
+}
+
+// return 通过异常向上抛，由函数调用处捕获取值
+class ReturnSignal {
+  constructor(public value?: Value) {}
+}
+
+// ── 词法 ──
+type TokType = 'num' | 'ident' | 'color' | 'op';
+interface Token {
+  type: TokType;
+  value: string;
+}
+
+// 去掉注释（// 行内注释，或 # 仅在行首作注释），再扫描 token。
+// 注意：# 仅在行首是注释，行内的 #rrggbb / #rgb 是 hex 颜色，必须保留。
+function tokenize(src: string): Token[] {
   const cleaned = src
     .split('\n')
     .map((l) => l.replace(/\/\/.*$/, '').replace(/^\s*#.*$/, ''))
     .join('\n');
-  return cleaned.match(/[{}]|[^\s{}]+/g) || [];
-}
-
-interface Cmd {
-  op: string;
-  args: string[];
-  body?: Cmd[]; // repeat 子命令
-}
-
-function parse(tokens: string[]): Cmd[] {
+  const toks: Token[] = [];
   let i = 0;
-  function walk(stopAtBrace: boolean): Cmd[] {
-    const cmds: Cmd[] = [];
-    while (i < tokens.length) {
-      const tok = tokens[i];
-      if (tok === '}') {
-        if (stopAtBrace) { i++; return cmds; }
-        i++; continue;
-      }
-      if (tok === '{') { i++; continue; }
-      if (tok === 'repeat') {
-        const n = Number(tokens[i + 1]);
-        i += 2;
-        if (tokens[i] === '{') i++;
-        const body = walk(true);
-        cmds.push({ op: 'repeat', args: [String(Number.isFinite(n) ? n : 1)], body });
-        continue;
-      }
-      if (COMMANDS.has(tok)) {
-        const args: string[] = [];
-        i++;
-        while (i < tokens.length && !COMMANDS.has(tokens[i]) && tokens[i] !== '}' && tokens[i] !== '{' && tokens[i] !== 'repeat') {
-          args.push(tokens[i]); i++;
-        }
-        cmds.push({ op: tok, args });
-        continue;
-      }
-      i++; // 未知词，跳过
+  const n = cleaned.length;
+  while (i < n) {
+    const ch = cleaned[i];
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\u3000') { i++; continue; }
+    // 数字（含小数）
+    if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(cleaned[i + 1] || ''))) {
+      let j = i;
+      while (j < n && /[0-9.]/.test(cleaned[j])) j++;
+      toks.push({ type: 'num', value: cleaned.slice(i, j) });
+      i = j; continue;
     }
-    return cmds;
+    // 标识符 / 变量 / 函数名
+    if (/[A-Za-z_]/.test(ch)) {
+      let j = i;
+      while (j < n && /[A-Za-z0-9_]/.test(cleaned[j])) j++;
+      toks.push({ type: 'ident', value: cleaned.slice(i, j) });
+      i = j; continue;
+    }
+    // 行内 hex 颜色（至少 3 位十六进制）
+    if (ch === '#') {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-F]/.test(cleaned[j])) j++;
+      if (j - i >= 4) { toks.push({ type: 'color', value: cleaned.slice(i, j) }); i = j; continue; }
+      i++; continue;
+    }
+    // 双字符运算符
+    const two = cleaned.slice(i, i + 2);
+    if (two === '==' || two === '!=' || two === '<=' || two === '>=' || two === '&&' || two === '||') {
+      toks.push({ type: 'op', value: two }); i += 2; continue;
+    }
+    if ('{}()=,+-*/%<>!;'.includes(ch)) {
+      toks.push({ type: 'op', value: ch }); i++; continue;
+    }
+    i++; // 未知字符跳过
   }
-  return walk(false);
+  return toks;
+}
+
+function isOpTok(tokens: Token[], pos: { i: number }, v: string): boolean {
+  const t = tokens[pos.i];
+  return !!t && t.type === 'op' && t.value === v;
+}
+
+// ── 语法：语句树 ──
+// cmd/assign 的 value/args 保存 token 切片，运行时再按当前变量求值；
+// repeat/while/if/def 等保留子语句。
+type Stmt =
+  | { kind: 'cmd'; name: string; args: Token[][] }
+  | { kind: 'assign'; name: string; value: Token[] }
+  | { kind: 'repeat'; count: Token[]; body: Stmt[] }
+  | { kind: 'while'; cond: Token[]; body: Stmt[] }
+  | { kind: 'for'; init: Stmt | null; cond: Token[]; update: Stmt | null; body: Stmt[] }
+  | { kind: 'if'; cond: Token[]; then: Stmt[]; elseStmt: Stmt[] | null }
+  | { kind: 'def'; name: string; params: string[]; body: Stmt[] }
+  | { kind: 'call'; name: string; args: Token[][] }
+  | { kind: 'return'; value: Token[] | null };
+
+// 仅推进位置的表达式扫描（与运行时求值 parseExpr 语法一致，避免解析期产生副作用）
+function skipExpr(tokens: Token[], pos: { i: number }): void {
+  skipOr(tokens, pos);
+}
+function skipOr(tokens: Token[], pos: { i: number }): void {
+  skipAnd(tokens, pos);
+  while (isOpTok(tokens, pos, '||')) { pos.i++; skipAnd(tokens, pos); }
+}
+function skipAnd(tokens: Token[], pos: { i: number }): void {
+  skipEq(tokens, pos);
+  while (isOpTok(tokens, pos, '&&')) { pos.i++; skipEq(tokens, pos); }
+}
+function skipEq(tokens: Token[], pos: { i: number }): void {
+  skipRel(tokens, pos);
+  while (isOpTok(tokens, pos, '==') || isOpTok(tokens, pos, '!=')) { pos.i++; skipRel(tokens, pos); }
+}
+function skipRel(tokens: Token[], pos: { i: number }): void {
+  skipAdd(tokens, pos);
+  while (isOpTok(tokens, pos, '<') || isOpTok(tokens, pos, '<=') || isOpTok(tokens, pos, '>') || isOpTok(tokens, pos, '>=')) {
+    pos.i++; skipAdd(tokens, pos);
+  }
+}
+function skipAdd(tokens: Token[], pos: { i: number }): void {
+  skipMul(tokens, pos);
+  while (isOpTok(tokens, pos, '+') || isOpTok(tokens, pos, '-')) { pos.i++; skipMul(tokens, pos); }
+}
+function skipMul(tokens: Token[], pos: { i: number }): void {
+  skipUn(tokens, pos);
+  while (isOpTok(tokens, pos, '*') || isOpTok(tokens, pos, '/') || isOpTok(tokens, pos, '%')) { pos.i++; skipUn(tokens, pos); }
+}
+function skipUn(tokens: Token[], pos: { i: number }): void {
+  if (isOpTok(tokens, pos, '-') || isOpTok(tokens, pos, '+') || isOpTok(tokens, pos, '!')) { pos.i++; skipUn(tokens, pos); return; }
+  skipPrim(tokens, pos);
+}
+function skipPrim(tokens: Token[], pos: { i: number }): void {
+  const t = tokens[pos.i];
+  if (!t) return;
+  if (t.type === 'num' || t.type === 'color') { pos.i++; return; }
+  if (t.type === 'op' && t.value === '(') {
+    pos.i++; skipExpr(tokens, pos);
+    if (isOpTok(tokens, pos, ')')) pos.i++;
+    return;
+  }
+  if (t.type === 'ident') {
+    pos.i++;
+    if (isOpTok(tokens, pos, '(')) {
+      pos.i++;
+      while (pos.i < tokens.length && !isOpTok(tokens, pos, ')')) {
+        skipExpr(tokens, pos);
+        if (isOpTok(tokens, pos, ',')) pos.i++;
+      }
+      if (isOpTok(tokens, pos, ')')) pos.i++;
+    }
+    return;
+  }
+  pos.i++;
+}
+
+function parse(tokens: Token[]): Stmt[] {
+  const pos = { i: 0 };
+  const peek = (): Token | undefined => tokens[pos.i];
+
+  // 解析一个表达式项（贪婪），返回 token 切片，运行时再求值
+  function term(): Token[] {
+    const start = pos.i;
+    skipExpr(tokens, pos);
+    return tokens.slice(start, pos.i);
+  }
+
+  function parseAssignStmt(): Stmt {
+    const t = peek();
+    const name = t ? t.value : '';
+    pos.i++;
+    if (!isOpTok(tokens, pos, '=')) return { kind: 'cmd', name: '', args: [] };
+    pos.i++;
+    return { kind: 'assign', name, value: term() };
+  }
+
+  function parseBlock(): Stmt[] {
+    if (!isOpTok(tokens, pos, '{')) return [];
+    pos.i++;
+    const body: Stmt[] = [];
+    while (pos.i < tokens.length && !isOpTok(tokens, pos, '}')) {
+      const s = parseStatement();
+      if (s) body.push(s);
+    }
+    if (isOpTok(tokens, pos, '}')) pos.i++;
+    return body;
+  }
+
+  function parseCallOrCmd(name: string): Stmt {
+    if (isOpTok(tokens, pos, '(')) {
+      pos.i++;
+      const args: Token[][] = [];
+      while (pos.i < tokens.length && !isOpTok(tokens, pos, ')')) {
+        args.push(term());
+        if (isOpTok(tokens, pos, ',')) pos.i++;
+      }
+      if (isOpTok(tokens, pos, ')')) pos.i++;
+      return { kind: 'call', name, args };
+    }
+    const args: Token[][] = [];
+    while (pos.i < tokens.length) {
+      const t = tokens[pos.i];
+      if (t.type === 'op' && (t.value === '{' || t.value === '}')) break;
+      if (t.type === 'ident' && COMMANDS.has(t.value)) break;
+      args.push(term());
+      if (isOpTok(tokens, pos, ',')) pos.i++;
+    }
+    return { kind: 'cmd', name, args };
+  }
+
+  function parseStatement(): Stmt | null {
+    const t = peek();
+    if (!t) return null;
+    if (t.type === 'op') { pos.i++; return null; }
+    const v = t.value;
+
+    if (v === 'repeat') {
+      pos.i++;
+      const count = term();
+      const body = parseBlock();
+      return { kind: 'repeat', count, body };
+    }
+    if (v === 'while') {
+      pos.i++;
+      const cond = term();
+      const body = parseBlock();
+      return { kind: 'while', cond, body };
+    }
+    if (v === 'for') {
+      pos.i++;
+      if (!isOpTok(tokens, pos, '(')) return null;
+      pos.i++;
+      let init: Stmt | null = null;
+      if (!isOpTok(tokens, pos, ';')) init = parseAssignStmt();
+      if (!isOpTok(tokens, pos, ';')) return null;
+      pos.i++;
+      const cond = term();
+      if (!isOpTok(tokens, pos, ';')) return null;
+      pos.i++;
+      let update: Stmt | null = null;
+      if (!isOpTok(tokens, pos, ')')) update = parseAssignStmt();
+      if (!isOpTok(tokens, pos, ')')) return null;
+      pos.i++;
+      const body = parseBlock();
+      return { kind: 'for', init, cond, update, body };
+    }
+    if (v === 'if') {
+      pos.i++;
+      const cond = term();
+      const then = parseBlock();
+      let elseStmt: Stmt[] | null = null;
+      if (peek()?.type === 'ident' && peek()?.value === 'else') {
+        pos.i++;
+        if (peek()?.value === 'if') {
+          const nested = parseStatement();
+          elseStmt = nested ? [nested] : null;
+        } else {
+          elseStmt = parseBlock();
+        }
+      }
+      return { kind: 'if', cond, then, elseStmt };
+    }
+    if (v === 'to') {
+      pos.i++;
+      const name = peek()?.value || '';
+      pos.i++;
+      const params: string[] = [];
+      if (isOpTok(tokens, pos, '(')) {
+        pos.i++;
+        while (pos.i < tokens.length && !isOpTok(tokens, pos, ')')) {
+          const p = peek();
+          if (p && p.type === 'ident') params.push(p.value);
+          pos.i++;
+          if (isOpTok(tokens, pos, ',')) pos.i++;
+        }
+        if (isOpTok(tokens, pos, ')')) pos.i++;
+      } else {
+        while (peek()?.type === 'ident') { params.push(peek()!.value); pos.i++; }
+      }
+      const body = parseBlock();
+      return { kind: 'def', name, params, body };
+    }
+    if (v === 'return') {
+      pos.i++;
+      const next = peek();
+      const value = next && !(next.type === 'op' && next.value === '}') && !(next.type === 'ident' && COMMANDS.has(next.value))
+        ? term()
+        : null;
+      return { kind: 'return', value };
+    }
+    if (t.type === 'ident') {
+      pos.i++;
+      if (isOpTok(tokens, pos, '=')) {
+        pos.i++;
+        return { kind: 'assign', name: v, value: term() };
+      }
+      return parseCallOrCmd(v);
+    }
+    pos.i++;
+    return null;
+  }
+
+  const stmts: Stmt[] = [];
+  while (pos.i < tokens.length) {
+    if (isOpTok(tokens, pos, '}')) { pos.i++; continue; }
+    const s = parseStatement();
+    if (s) stmts.push(s);
+  }
+  return stmts;
 }
 
 export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
@@ -123,6 +393,7 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   let fillColor = '#000000';
   let width = 3;
   let ops = 0;
+  let aborted = false;
 
   // 当前笔画（落笔连续段）
   let cur: PenStroke | null = null;
@@ -175,7 +446,7 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   }
 
   function move(dist: number) {
-    if (ops++ > maxOps) return;
+    if (ops++ > maxOps) { aborted = true; return; }
     const rad = (heading * Math.PI) / 180;
     // 标准 turtle：+y 向上为正
     const nx = x + dist * Math.cos(rad);
@@ -286,63 +557,284 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     if (!wasDown) { flush(); penDown = false; }
   }
 
-  function exec(cmds: Cmd[]) {
-    for (const c of cmds) {
-      if (ops > maxOps) break;
-      const a = c.args;
-      switch (c.op) {
+  // ── 运行时环境 ──
+  // 变量栈：函数调用压入新帧，参数绑定到最顶帧；读取从栈顶向下查找
+  const varStack: Array<Record<string, Value>> = [{}];
+  // 函数表：def 预收集
+  const funcs: Record<string, { params: string[]; body: Stmt[] }> = {};
+
+  function getVar(name: string): Value | undefined {
+    for (let k = varStack.length - 1; k >= 0; k--) {
+      if (Object.prototype.hasOwnProperty.call(varStack[k], name)) return varStack[k][name];
+    }
+    if (name === 'pi') return Math.PI;
+    if (name === 'e') return Math.E;
+    if (name === 'true') return true;
+    if (name === 'false') return false;
+    return undefined;
+  }
+
+  function setVar(name: string, v: Value) {
+    varStack[varStack.length - 1][name] = v;
+  }
+
+  // 内置数学函数 + 自定义函数调用（表达式中的函数调用入口）
+  function callValue(name: string, args: Value[]): Value {
+    switch (name) {
+      case 'sqrt': return Math.sqrt(toNum(args[0]));
+      case 'sin': return Math.sin(toNum(args[0]));
+      case 'cos': return Math.cos(toNum(args[0]));
+      case 'tan': return Math.tan(toNum(args[0]));
+      case 'abs': return Math.abs(toNum(args[0]));
+      case 'floor': return Math.floor(toNum(args[0]));
+      case 'ceil': return Math.ceil(toNum(args[0]));
+      case 'round': return Math.round(toNum(args[0]));
+      case 'pow': return Math.pow(toNum(args[0]), toNum(args[1] ?? 0));
+      case 'log': return Math.log(toNum(args[0]));
+      case 'exp': return Math.exp(toNum(args[0]));
+      case 'mod': return toNum(args[0]) % toNum(args[1] ?? 0);
+      case 'atan2': return Math.atan2(toNum(args[0]), toNum(args[1] ?? 0));
+      case 'min': return Math.min(...args.map(toNum));
+      case 'max': return Math.max(...args.map(toNum));
+      case 'random':
+        return args.length >= 2
+          ? toNum(args[0]) + Math.random() * (toNum(args[1]) - toNum(args[0]))
+          : Math.random();
+      default: break;
+    }
+    const fn = funcs[name];
+    if (!fn) return 0;
+    varStack.push({});
+    fn.params.forEach((p, k) => { varStack[varStack.length - 1][p] = args[k] ?? 0; });
+    try {
+      exec(fn.body);
+      return 0;
+    } catch (e) {
+      if (e instanceof ReturnSignal) return e.value ?? 0;
+      throw e;
+    } finally {
+      varStack.pop();
+    }
+  }
+
+  // ── 表达式求值（递归下降，与 skipExpr 语法一致）──
+  function parseExpr(tokens: Token[], pos: { i: number }): Value {
+    return parseOr(tokens, pos);
+  }
+  function parseOr(tokens: Token[], pos: { i: number }): Value {
+    let left = parseAnd(tokens, pos);
+    while (isOpTok(tokens, pos, '||')) { pos.i++; left = truthy(left) || truthy(parseAnd(tokens, pos)); }
+    return left;
+  }
+  function parseAnd(tokens: Token[], pos: { i: number }): Value {
+    let left = parseEq(tokens, pos);
+    while (isOpTok(tokens, pos, '&&')) { pos.i++; left = truthy(left) && truthy(parseEq(tokens, pos)); }
+    return left;
+  }
+  function parseEq(tokens: Token[], pos: { i: number }): Value {
+    let left = parseRel(tokens, pos);
+    while (isOpTok(tokens, pos, '==') || isOpTok(tokens, pos, '!=')) {
+      const op = tokens[pos.i].value; pos.i++;
+      const right = parseRel(tokens, pos);
+      left = op === '==' ? left === right : left !== right;
+    }
+    return left;
+  }
+  function parseRel(tokens: Token[], pos: { i: number }): Value {
+    let left = parseAdd(tokens, pos);
+    while (isOpTok(tokens, pos, '<') || isOpTok(tokens, pos, '<=') || isOpTok(tokens, pos, '>') || isOpTok(tokens, pos, '>=')) {
+      const op = tokens[pos.i].value; pos.i++;
+      const right = parseAdd(tokens, pos);
+      const a = toNum(left), b = toNum(right);
+      left = op === '<' ? a < b : op === '<=' ? a <= b : op === '>' ? a > b : a >= b;
+    }
+    return left;
+  }
+  function parseAdd(tokens: Token[], pos: { i: number }): Value {
+    let left = parseMul(tokens, pos);
+    while (isOpTok(tokens, pos, '+') || isOpTok(tokens, pos, '-')) {
+      const op = tokens[pos.i].value; pos.i++;
+      const right = parseMul(tokens, pos);
+      left = op === '+' ? toNum(left) + toNum(right) : toNum(left) - toNum(right);
+    }
+    return left;
+  }
+  function parseMul(tokens: Token[], pos: { i: number }): Value {
+    let left = parseUn(tokens, pos);
+    while (isOpTok(tokens, pos, '*') || isOpTok(tokens, pos, '/') || isOpTok(tokens, pos, '%')) {
+      const op = tokens[pos.i].value; pos.i++;
+      const right = parseUn(tokens, pos);
+      left = op === '*' ? toNum(left) * toNum(right)
+        : op === '/' ? (toNum(right) === 0 ? 0 : toNum(left) / toNum(right))
+        : toNum(left) % toNum(right);
+    }
+    return left;
+  }
+  function parseUn(tokens: Token[], pos: { i: number }): Value {
+    if (isOpTok(tokens, pos, '-')) { pos.i++; return -toNum(parseUn(tokens, pos)); }
+    if (isOpTok(tokens, pos, '+')) { pos.i++; return toNum(parseUn(tokens, pos)); }
+    if (isOpTok(tokens, pos, '!')) { pos.i++; return !truthy(parseUn(tokens, pos)); }
+    return parsePrim(tokens, pos);
+  }
+  function parsePrim(tokens: Token[], pos: { i: number }): Value {
+    const t = tokens[pos.i];
+    if (!t) return 0;
+    if (t.type === 'num') { pos.i++; return Number(t.value); }
+    if (t.type === 'color') { pos.i++; return t.value; }
+    if (t.type === 'op' && t.value === '(') {
+      pos.i++;
+      const v = parseExpr(tokens, pos);
+      if (isOpTok(tokens, pos, ')')) pos.i++;
+      return v;
+    }
+    if (t.type === 'ident') {
+      const name = t.value; pos.i++;
+      if (isOpTok(tokens, pos, '(')) {
+        pos.i++;
+        const args: Value[] = [];
+        while (pos.i < tokens.length && !isOpTok(tokens, pos, ')')) {
+          args.push(parseExpr(tokens, pos));
+          if (isOpTok(tokens, pos, ',')) pos.i++;
+        }
+        if (isOpTok(tokens, pos, ')')) pos.i++;
+        return callValue(name, args);
+      }
+      const v = getVar(name);
+      return v !== undefined ? v : name; // 未定义标识符当作字符串字面量（如颜色名 red）
+    }
+    pos.i++;
+    return 0;
+  }
+
+  function evalExpr(toks: Token[]): Value {
+    if (toks.length === 0) return 0;
+    const pos = { i: 0 };
+    return parseExpr(toks, pos);
+  }
+
+  // ── 执行 ──
+  function execCmd(name: string, slices: Token[][]) {
+    const a = slices.map(evalExpr);
+    const n = (k: number, d = 0): number => {
+      const v = a[k];
+      return typeof v === 'number' ? v : (Number(v) || d);
+    };
+    switch (name) {
+      case 'fd': case 'forward': move(n(0)); break;
+      case 'bk': case 'back': move(-n(0)); break;
+      case 'lt': case 'left': heading += n(0); break; // 左转=逆时针（y 向上时 heading 增大）
+      case 'rt': case 'right': heading -= n(0); break; // 右转=顺时针
+      case 'pu': case 'penup': case 'up': flush(); penDown = false; break;
+      case 'pd': case 'pendown': case 'down': penDown = true; break;
+      case 'color': {
+        // color <pen> [fill]
+        if (a[0] !== undefined) color = parseColor(String(a[0]));
+        if (a[1] !== undefined) fillColor = parseColor(String(a[1]));
+        break;
+      }
+      case 'pencolor': if (a[0] !== undefined) color = parseColor(String(a[0])); break;
+      case 'fillcolor': if (a[0] !== undefined) fillColor = parseColor(String(a[0])); break;
+      case 'width': case 'pensize': {
+        const w = n(0);
+        if (w > 0) width = w;
+        break;
+      }
+      case 'goto': case 'setpos': gotoAbs(n(0), n(1)); break;
+      case 'setx': gotoAbs(n(0), y); break;
+      case 'sety': gotoAbs(x, n(0)); break;
+      case 'setheading': case 'seth': heading = n(0); break;
+      case 'home': {
+        // 回到逻辑原点(0,0) 即画布中心，朝东
+        flush();
+        gotoAbs(0, 0);
+        heading = 0;
+        break;
+      }
+      case 'circle': circleCmd(n(0), a[1] !== undefined ? n(1) : 360, a[2] !== undefined ? n(2) : undefined); break;
+      case 'dot': dotCmd(n(0) || 2, a[1] !== undefined ? String(a[1]) : undefined); break;
+      case 'rect': case 'rectangle': rectCmd(n(0), n(1)); break;
+      case 'ellipse': case 'oval': ellipseCmd(n(0), n(1)); break;
+      case 'line': lineCmd(n(0), n(1), n(2), n(3)); break;
+      case 'begin_fill': case 'bf': endFill(); filling = true; fillPoints = []; break;
+      case 'end_fill': case 'ef': endFill(); break;
+      case 'clear': {
+        // 清空画布：结束填充、丢弃已产生的图形，仅保留一个清空标记
+        endFill();
+        flush();
+        items.length = 0;
+        items.push({ type: 'clear' });
+        break;
+      }
+      default: break; // pos/heading/isdown 查询类，本实现无需输出
+    }
+  }
+
+  function exec(stmts: Stmt[]) {
+    for (const s of stmts) {
+      if (aborted) break;
+      if (++ops > maxOps) { aborted = true; break; }
+      switch (s.kind) {
+        case 'cmd': execCmd(s.name, s.args); break;
+        case 'assign': setVar(s.name, evalExpr(s.value)); break;
         case 'repeat': {
-          const n = Math.min(Number(a[0]) || 0, 1000);
-          for (let k = 0; k < n; k++) exec(c.body || []);
+          const n = Math.min(Math.floor(toNum(evalExpr(s.count))), 1000);
+          for (let k = 0; k < n && !aborted; k++) exec(s.body);
           break;
         }
-        case 'fd': case 'forward': move(Number(a[0]) || 0); break;
-        case 'bk': case 'back': move(-(Number(a[0]) || 0)); break;
-        case 'lt': case 'left': heading += Number(a[0]) || 0; break; // 左转=逆时针（y 向上时 heading 增大）
-        case 'rt': case 'right': heading -= Number(a[0]) || 0; break; // 右转=顺时针
-        case 'pu': case 'penup': case 'up': flush(); penDown = false; break;
-        case 'pd': case 'pendown': case 'down': penDown = true; break;
-        case 'color': {
-          // color <pen> [fill]
-          if (a[0]) color = parseColor(a[0]);
-          if (a[1]) fillColor = parseColor(a[1]);
+        case 'while': {
+          while (!aborted && truthy(evalExpr(s.cond))) {
+            if (++ops > maxOps) { aborted = true; break; }
+            exec(s.body);
+          }
           break;
         }
-        case 'pencolor': if (a[0]) color = parseColor(a[0]); break;
-        case 'fillcolor': if (a[0]) fillColor = parseColor(a[0]); break;
-        case 'width': case 'pensize': {
-          const w = Number(a[0]);
-          if (Number.isFinite(w) && w > 0) width = w;
+        case 'for': {
+          if (s.init) exec([s.init]);
+          while (!aborted && truthy(evalExpr(s.cond))) {
+            if (++ops > maxOps) { aborted = true; break; }
+            exec(s.body);
+            if (s.update) exec([s.update]);
+          }
           break;
         }
-        case 'goto': case 'setpos': gotoAbs(Number(a[0]), Number(a[1])); break;
-        case 'setx': gotoAbs(Number(a[0]), y); break;
-        case 'sety': gotoAbs(x, Number(a[0])); break;
-        case 'setheading': case 'seth': {
-          const h = Number(a[0]);
-          if (Number.isFinite(h)) heading = h;
+        case 'if': {
+          if (truthy(evalExpr(s.cond))) exec(s.then);
+          else if (s.elseStmt) exec(s.elseStmt);
           break;
         }
-        case 'home': {
-          // 回到逻辑原点(0,0) 即画布中心，朝东
-          flush();
-          gotoAbs(0, 0);
-          heading = 0;
-          break;
-        }
-        case 'circle': circleCmd(Number(a[0]), Number(a[1]) || 360, a[2] !== undefined ? Number(a[2]) : undefined); break;
-        case 'dot': dotCmd(Number(a[0]) || 2, a[1]); break;
-        case 'rect': case 'rectangle': rectCmd(Number(a[0]), Number(a[1])); break;
-        case 'ellipse': case 'oval': ellipseCmd(Number(a[0]), Number(a[1])); break;
-        case 'line': lineCmd(Number(a[0]), Number(a[1]), Number(a[2]), Number(a[3])); break;
-        case 'begin_fill': case 'bf': endFill(); filling = true; fillPoints = []; break;
-        case 'end_fill': case 'ef': endFill(); break;
-        default: break; // pos/heading/isdown 查询类，本实现无需输出
+        case 'def': break; // 已在预收集阶段注册
+        case 'call': callValue(s.name, s.args.map(evalExpr)); break;
+        case 'return': throw new ReturnSignal(s.value ? evalExpr(s.value) : undefined);
       }
     }
   }
 
-  exec(parse(tokenize(script)));
+  // 预收集函数定义，允许函数在定义前互相/递归调用
+  function collectDefs(stmts: Stmt[]) {
+    for (const s of stmts) {
+      if (s.kind === 'def') {
+        funcs[s.name] = { params: s.params, body: s.body };
+      } else if (s.kind === 'repeat' || s.kind === 'while') {
+        collectDefs(s.body);
+      } else if (s.kind === 'for') {
+        collectDefs(s.body);
+        if (s.init) collectDefs([s.init]);
+        if (s.update) collectDefs([s.update]);
+      } else if (s.kind === 'if') {
+        collectDefs(s.then);
+        if (s.elseStmt) collectDefs(s.elseStmt);
+      }
+    }
+  }
+
+  const stmts = parse(tokenize(script));
+  collectDefs(stmts);
+  try {
+    exec(stmts);
+  } catch (e) {
+    // 顶层 return 直接忽略
+    if (!(e instanceof ReturnSignal)) throw e;
+  }
   if (filling) endFill();
   flush();
   return items;
@@ -352,6 +844,7 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
 export function turtleToElements(items: TurtleItem[], base: { id: string }): Partial<BoardElement>[] {
   const out: Partial<BoardElement>[] = [];
   items.forEach((it, i) => {
+    if (isClearItem(it)) return; // 清空标记：仅作信号，不产出元素
     if ('fill' in it && it.fill) {
       out.push({
         type: 'polygon',

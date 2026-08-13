@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { PNG } from 'pngjs';
 import * as board from '../services/board';
 import { renderBoardToPng } from '../infrastructure/render/png';
-import { runTurtle, turtleToElements } from '../infrastructure/turtle';
+import { runTurtle, turtleToElements, isClearItem } from '../infrastructure/turtle';
 import { NotFoundError, ValidationError } from '../domain/errors';
 import type { BoardElement } from '../domain/types';
 
@@ -68,6 +68,10 @@ boardsApp.post('/:id/turtle', async (c) => {
     startY: state.meta.height / 2,
     startHeading: 0,
   });
+  // 脚本含 clear 指令：先清空画布再落新元素
+  if (items.some(isClearItem)) {
+    await board.clearBoard(c.env, id);
+  }
   const partials = turtleToElements(items, { id: `turtle_${Date.now().toString(36)}` });
   const added: BoardElement[] = [];
   for (const p of partials) {

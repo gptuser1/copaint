@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runTurtle } from '../src/infrastructure/turtle';
+import { runTurtle, turtleToElements } from '../src/infrastructure/turtle';
 
 describe('turtle', () => {
   it('draws a square with repeat', () => {
@@ -117,5 +117,155 @@ describe('turtle', () => {
     const pa = a[0].points, pb = b[0].points;
     expect(Math.round(pa[pa.length - 1])).toBeLessThan(150);
     expect(Math.round(pb[pb.length - 1])).toBeGreaterThan(150);
+  });
+
+  it('clear emits a clear marker and drops prior drawings', () => {
+    const items = runTurtle(`pd fd 20\nclear\npd fd 10`, { startX: 0, startY: 0 });
+    expect(items.some((i) => i.type === 'clear')).toBe(true);
+    // clear 之前的图形被丢弃，只保留 clear 之后的笔画
+    const strokes = items.filter((i) => i.type !== 'clear');
+    expect(strokes.length).toBe(1);
+    if (strokes[0] && 'points' in strokes[0]) {
+      expect(strokes[0].points.length).toBe(4);
+    }
+  });
+
+  it('turtleToElements skips the clear marker', () => {
+    const items = runTurtle(`clear\npd fd 10`, { startX: 0, startY: 0 });
+    const els = turtleToElements(items, { id: 't' });
+    expect(els.length).toBe(1);
+    expect(els[0].type).toBe('pen');
+  });
+
+  it('supports variables and arithmetic expressions', () => {
+    const items = runTurtle(
+      `size = 25\npd fd size * 2`,
+      { startX: 200, startY: 150 },
+    );
+    expect(items.length).toBe(1);
+    // size*2 = 50，朝右 → 画布 x 增大 50
+    const p = items[0].points;
+    expect(Math.round(p[p.length - 2])).toBe(250);
+  });
+
+  it('supports if/else with comparisons', () => {
+    const a = runTurtle(`x = 5\nif x > 3 { pd fd 30 }`, { startX: 0, startY: 0 });
+    const b = runTurtle(`x = 1\nif x > 3 { pd fd 30 } else { pd fd 10 }`, { startX: 0, startY: 0 });
+    expect(a.length).toBe(1);
+    expect(a[0].points.length).toBe(4);
+    // else 分支：只画了 10，也应是 2 点一笔
+    expect(b.length).toBe(1);
+    expect(b[0].points.length).toBe(4);
+  });
+
+  it('supports else-if chains and logical operators', () => {
+    // else if 链 + && 逻辑与
+    const items = runTurtle(
+      `x = 5\ny = 3\nif x > 3 && y > 2 { pd fd 30 } else if x > 0 { pd fd 10 } else { pd fd 5 }`,
+      { startX: 0, startY: 0 },
+    );
+    expect(items.length).toBe(1);
+    // 条件 x>3 && y>2 成立 → 走第一个分支，画 30
+    expect(Math.round(items[0].points[items[0].points.length - 2])).toBe(30);
+  });
+
+  it('supports all comparison and boolean operators', () => {
+    const p = (script: string) =>
+      runTurtle(script, { startX: 0, startY: 0 })[0].points;
+    // != 与 || 逻辑或
+    expect(Math.round(p(`a = 1\nb = 2\nif a != 1 || b > 1 { pd fd 20 }`)[2])).toBe(20);
+    // <= 和 >= 同时成立
+    expect(Math.round(p(`a = 5\nif a >= 5 && a <= 5 { pd fd 15 }`)[2])).toBe(15);
+    // 未命中分支则不绘制
+    expect(runTurtle(`a = 0\nif a > 1 && a < -1 { pd fd 20 }`, { startX: 0, startY: 0 }).length).toBe(0);
+  });
+
+  it('supports nested loops', () => {
+    // 外层 repeat 3 次，内层 for 2 步 → 每步 fd 10 / rt 60，共 360° 闭合
+    const items = runTurtle(
+      `repeat 3 {\n for (j = 0; j < 2; j = j + 1) { pd fd 10 rt 60 }\n}`,
+      { startX: 200, startY: 150 },
+    );
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    expect(Math.round(p[0])).toBe(Math.round(p[p.length - 2]));
+    expect(Math.round(p[1])).toBe(Math.round(p[p.length - 1]));
+  });
+
+  it('uses loop variable inside loop body', () => {
+    // i=1..4，每步 fd i*10 → 10+20+30+40 = 100
+    const items = runTurtle(
+      `for (i = 1; i <= 4; i = i + 1) { pd fd i * 10 }`,
+      { startX: 0, startY: 0 },
+    );
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    expect(Math.round(p[p.length - 2])).toBe(100);
+  });
+
+  it('supports while loop with a counter', () => {
+    const items = runTurtle(
+      `n = 0\nwhile n < 4 {\n pd fd 20\n rt 90\n n = n + 1\n}`,
+      { startX: 200, startY: 150 },
+    );
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    // 正方形：闭合，首尾同点
+    expect(Math.round(p[0])).toBe(Math.round(p[p.length - 2]));
+    expect(Math.round(p[1])).toBe(Math.round(p[p.length - 1]));
+  });
+
+  it('supports for loop', () => {
+    const items = runTurtle(
+      `for (i = 0; i < 4; i = i + 1) { pd fd 20 lt 90 }`,
+      { startX: 200, startY: 150 },
+    );
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    expect(Math.round(p[0])).toBe(Math.round(p[p.length - 2]));
+    expect(Math.round(p[1])).toBe(Math.round(p[p.length - 1]));
+  });
+
+  it('supports math functions in expressions', () => {
+    const items = runTurtle(
+      `pd fd sqrt(100) + abs(-5) + pow(2, 3)`,
+      { startX: 200, startY: 150 },
+    );
+    // 10 + 5 + 8 = 23
+    const p = items[0].points;
+    expect(Math.round(p[p.length - 2])).toBe(223);
+  });
+
+  it('supports custom functions that draw', () => {
+    const items = runTurtle(
+      `to square(s) {\n repeat 4 { pd fd s rt 90 }\n}\npd\nsquare(30)`,
+      { startX: 200, startY: 150 },
+    );
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    expect(Math.round(p[0])).toBe(Math.round(p[p.length - 2]));
+    expect(Math.round(p[1])).toBe(Math.round(p[p.length - 1]));
+  });
+
+  it('supports custom functions that return a value', () => {
+    const items = runTurtle(
+      `to double(x) {\n return x * 2\n}\npd fd double(10)`,
+      { startX: 200, startY: 150 },
+    );
+    const p = items[0].points;
+    expect(Math.round(p[p.length - 2])).toBe(220);
+  });
+
+  it('stops infinite loops via maxOps', () => {
+    const items = runTurtle(`n = 0\nwhile true { n = n + 1 }`, { startX: 0, startY: 0, maxOps: 1000 });
+    expect(Array.isArray(items)).toBe(true);
+  });
+
+  it('keeps comments working with the new parser', () => {
+    const items = runTurtle(
+      `# 行首注释\npd fd 20 // 行内注释\nrt 90`,
+      { startX: 0, startY: 0 },
+    );
+    expect(items.length).toBe(1);
   });
 });

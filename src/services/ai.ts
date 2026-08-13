@@ -1,6 +1,6 @@
 // AI 用例层：执行 AI 绘制任务（单次 / 多步链式）+ Queues 消费入口
 // 读画板与写元素都走 BoardHub DO，配置走 Ocean
-import { getState, addElement, broadcast, getAiEpoch } from '../realtime/board-client';
+import { getState, addElement, broadcast, getAiEpoch, clearBoard } from '../realtime/board-client';
 import { generateTurtleElements } from '../infrastructure/ai/client';
 import { requireConfig } from './config';
 import type { AiJob, BoardElement } from '../domain/types';
@@ -37,7 +37,7 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
       requireConfig(env, 'openai_model'),
     ]);
 
-    const { elements: partials, next } = await generateTurtleElements(
+    const { elements: partials, next, cleared } = await generateTurtleElements(
       { apiKey, baseUrl, model },
       {
         instruction: job.instruction,
@@ -67,6 +67,20 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
       message: logMsg,
       success: true,
     });
+
+    // 脚本含 clear 指令：先清空画布已有内容再落新元素
+    if (cleared) {
+      await broadcast(env, job.boardId, 'ai-log', {
+        step: job.stepIndex,
+        totalSteps: job.totalSteps,
+        mode: job.mode,
+        instruction: job.instruction,
+        message: '📋 脚本含 clear 指令，先清空画布',
+        success: true,
+      });
+      // 通过 DO 的 clear 端点清空所有元素
+      await clearBoard(env, job.boardId);
+    }
 
     if (partials.length === 0) return;
 
