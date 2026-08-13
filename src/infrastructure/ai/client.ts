@@ -25,11 +25,55 @@ export interface LlmParams {
   thinking?: boolean;
 }
 
+// 把画布已有元素转成精简摘要（转成 turtle 逻辑坐标：中心原点、y 向上），
+// 注入提示词让 AI 感知已画内容，多步/延续绘制时避免重叠或重复
+function summarizeElements(elements: BoardElement[], width: number, height: number): string {
+  const MAX = 40; // 只摘要最近 40 个，避免提示词过大
+  const halfW = width / 2;
+  const halfH = height / 2;
+  // 画布坐标（左上原点、y 向下）→ 逻辑坐标（中心原点、y 向上）
+  const lx = (x: number) => Math.round(x - halfW);
+  const ly = (y: number) => Math.round(halfH - y);
+  const lines: string[] = [];
+  for (const e of elements.slice(-MAX)) {
+    let desc = '';
+    if (e.type === 'pen' || e.type === 'eraser') {
+      const pts = e.points || [];
+      if (pts.length < 4) continue;
+      const xs = pts.filter((_, i) => i % 2 === 0);
+      const ys = pts.filter((_, i) => i % 2 === 1);
+      const cx = lx((Math.min(...xs) + Math.max(...xs)) / 2);
+      const cy = ly((Math.min(...ys) + Math.max(...ys)) / 2);
+      desc = `${e.type} 中心(${cx},${cy}) 约${Math.round(pts.length / 2)}点`;
+    } else if (e.type === 'line') {
+      const x = e.x ?? 0, y = e.y ?? 0, x2 = e.x2 ?? 0, y2 = e.y2 ?? 0;
+      desc = `line (${lx(x)},${ly(y)})→(${lx(x2)},${ly(y2)})`;
+    } else if (e.type === 'polygon') {
+      const pts = e.points || [];
+      if (pts.length < 4) continue;
+      const xs = pts.filter((_, i) => i % 2 === 0);
+      const ys = pts.filter((_, i) => i % 2 === 1);
+      const cx = lx((Math.min(...xs) + Math.max(...xs)) / 2);
+      const cy = ly((Math.min(...ys) + Math.max(...ys)) / 2);
+      desc = `polygon 中心(${cx},${cy}) fill=${e.fill || e.color}`;
+    } else {
+      // rect / ellipse
+      const x = e.x ?? 0, y = e.y ?? 0, w = e.width ?? 0, h = e.height ?? 0;
+      desc = `${e.type} 中心(${lx(x + w / 2)},${ly(y + h / 2)}) ${w}×${h}`;
+    }
+    if (e.color) desc += ` 色=${e.color}`;
+    lines.push(`    - ${desc}`);
+  }
+  if (lines.length === 0) return 'existing: none（空画板）';
+  return `existing (${lines.length} 个):\n${lines.join('\n')}`;
+}
+
 export function buildTurtlePrompt(
   instruction: string,
   boardWidth: number,
   boardHeight: number,
   stepHint: string,
+  existing: BoardElement[],
 ): Array<{ role: 'system' | 'user'; content: string }> {
   const w = Math.round(boardWidth);
   const h = Math.round(boardHeight);
@@ -39,6 +83,7 @@ export function buildTurtlePrompt(
     + `  size: 宽 ${w}px 高 ${h}px，中心为原点，四周约 ±${Math.round(w / 2)}, ±${Math.round(h / 2)}\n`
     + '  axes: +x 右 / +y 向上\n'
     + '  heading: 0°右 90°上 180°左 270°下；lt 逆时针(+)，rt 顺时针(-)\n'
+    + summarizeElements(existing, boardWidth, boardHeight) + '\n'
     + 'initial: 原点朝右，抬笔(先 pd 才画线)，黑 #000000，线宽 3\n'
     + 'commands:\n'
     + '  移动: fd <n> / bk <n>\n'
@@ -78,7 +123,7 @@ export async function generateTurtleScript(
   input: DrawInput,
   params?: LlmParams,
 ): Promise<string> {
-  const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint);
+  const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint, input.elements);
   // 组装可调参数（未传则用默认值）
   const body: Record<string, unknown> = {
     model: config.model,
