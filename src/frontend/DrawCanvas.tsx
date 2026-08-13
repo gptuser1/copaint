@@ -82,7 +82,13 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
     drawingRef.current = false;
     const base = { color, strokeWidth, by: 'user' as const };
     if (tool === 'pen' || tool === 'eraser') {
-      if (draft.points.length >= 4) onCommit({ type: tool, points: draft.points, ...base });
+      if (draft.points.length >= 4) {
+        // 橡皮：用白色 + 加粗笔触"擦除"（白底画布上表现为清除）
+        const el = tool === 'eraser'
+          ? { type: 'eraser', points: draft.points, color: '#ffffff', strokeWidth: Math.max(strokeWidth, 12), by: 'user' as const }
+          : { type: tool, points: draft.points, ...base };
+        onCommit(el);
+      }
     } else if (tool === 'line') {
       if (draft.width > 2 || draft.height > 2) {
         onCommit({ type: 'line', x: draft.x, y: draft.y, x2: draft.x2, y2: draft.y2, ...base });
@@ -144,7 +150,7 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
         <Layer>
           {elements.map(renderElement)}
           {draft && (tool === 'pen' || tool === 'eraser') && draft.points.length >= 2 && (
-            <Line points={draft.points} stroke={color} strokeWidth={strokeWidth} lineCap="round" lineJoin="round" />
+            <Line points={draft.points} stroke={tool === 'eraser' ? '#ffffff' : color} strokeWidth={tool === 'eraser' ? Math.max(strokeWidth, 12) : strokeWidth} lineCap="round" lineJoin="round" />
           )}
           {draft && tool === 'rect' && (
             <Rect x={draft.x} y={draft.y} width={draft.width} height={draft.height} stroke={color} strokeWidth={strokeWidth} />
