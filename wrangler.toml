@@ -1,16 +1,15 @@
 name = "copaint"
 main = "src/index.ts"
 compatibility_date = "2025-03-01"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 
 [assets]
 directory = "./public"
 not_found_handling = "none"
 
-# ── Ocean (D1 REST) 访问凭据 ──
-# 由 wrangler secret 注入（本地开发放 .dev.vars）
-# COP_OCEAN_TOKEN: Ocean REST 访问 token（Cloudflare secret 绑定）
-# COP_OCEAN_BASE : Ocean REST 基地址
+[secrets]
+required = ["COP_DB_BASE"]
 
 [observability.logs]
 enabled = true
@@ -19,17 +18,12 @@ invocation_logs = true
 # ── AI 调度队列 ──
 [[queues.producers]]
 binding = "AI_QUEUE"
-queue = "copaint-ai-queue"
+queue = "yellow-river"
 
 [[queues.consumers]]
-queue = "copaint-ai-queue"
+queue = "yellow-river"
 max_batch_size = 1
 max_retries = 3
-dead_letter_queue = "copaint-dlq"
-
-[[queues.producers]]
-binding = "DLQ_PRODUCER"
-queue = "copaint-dlq"
 
 # ── WebSocket Durable Object ──
 [[durable_objects.bindings]]
@@ -39,3 +33,8 @@ class_name = "BoardHub"
 [[migrations]]
 tag = "v1"
 new_classes = ["BoardHub"]
+
+[[secrets_store_secrets]]
+store_id = "4cac25c20606481c9e202263d45a1d03"
+binding = "SECRET"
+secret_name = "0xffff"

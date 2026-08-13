@@ -1,4 +1,4 @@
-// 业务类型定义
+// 纯领域类型：前后端共享，禁止依赖 worker / Hono
 
 export type ElementType = 'pen' | 'rect' | 'ellipse' | 'line' | 'eraser';
 
@@ -18,8 +18,8 @@ export interface BoardElement {
   y2?: number;
   color: string;
   strokeWidth: number;
-  // 创建者标识：'user' | 'ai' | 'api'
-  by: string;
+  // 创建者标识：用户 / AI / 外部 API
+  by: 'user' | 'ai' | 'api';
   createdAt: number;
 }
 
@@ -46,4 +46,13 @@ export interface AiJob {
   stepIndex: number; // 0-based，当前步
   totalSteps: number; // 多步总步数
   delayMs: number;    // 步间间隔
+}
+
+// WebSocket 广播事件类型
+export type WsEvent = 'add' | 'update' | 'delete' | 'clear' | 'ops';
+
+// WebSocket 广播消息（前端使用）
+export interface WsMessage {
+  event: WsEvent;
+  payload: any;
 }

@@ -1,12 +1,28 @@
-// AI 指令 → 画板元素：调用 LLM 生成 JSON 元素
-import { getConfigByEnv } from '../services/config';
-import type { BoardElement, ElementType } from '../types';
-
-interface EnvLike {
-  [k: string]: any;
-}
+// LLM 客户端：把自然语言指令转成画板元素
+// 纯基础设施实现，配置由调用方（services/ai）传入，避免向上依赖
+import type { BoardElement, ElementType } from '../../domain/types';
 
 const VALID_TYPES: ElementType[] = ['pen', 'rect', 'ellipse', 'line', 'eraser'];
+
+export interface LlmConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+export interface DrawInput {
+  instruction: string;
+  width: number;
+  height: number;
+  elements: BoardElement[];
+  stepHint: string;
+}
+
+function describeElement(e: BoardElement): string {
+  if (e.type === 'pen' || e.type === 'eraser') return `points(${e.points?.length ?? 0})`;
+  if (e.type === 'line') return `(${e.x},${e.y})->(${e.x2},${e.y2})`;
+  return `(${e.x},${e.y}) ${e.width}x${e.height}`;
+}
 
 export function buildPrompt(
   instruction: string,
@@ -34,12 +50,6 @@ export function buildPrompt(
   ];
 }
 
-function describeElement(e: BoardElement): string {
-  if (e.type === 'pen' || e.type === 'eraser') return `points(${e.points?.length ?? 0})`;
-  if (e.type === 'line') return `(${e.x},${e.y})->(${e.x2},${e.y2})`;
-  return `(${e.x},${e.y}) ${e.width}x${e.height}`;
-}
-
 export function parseElements(raw: string): Partial<BoardElement>[] {
   let text = raw.trim();
   const fence = text.match(/```(?:json)?\n?([\s\S]*?)```/);
@@ -48,7 +58,6 @@ export function parseElements(raw: string): Partial<BoardElement>[] {
   try {
     parsed = JSON.parse(text);
   } catch {
-    // 尝试提取数组
     const arrStart = text.indexOf('[');
     const arrEnd = text.lastIndexOf(']');
     if (arrStart >= 0 && arrEnd > arrStart) {
@@ -89,26 +98,17 @@ function num(v: any): number | undefined {
 
 // 调用 LLM 生成元素
 export async function generateElements(
-  env: EnvLike,
-  instruction: string,
-  board: { width: number; height: number; elements: BoardElement[] },
-  stepHint: string,
+  config: LlmConfig,
+  input: DrawInput,
 ): Promise<Partial<BoardElement>[]> {
-  const apiKey = await getConfigByEnv(env, 'openai_api_key');
-  const baseUrl = await getConfigByEnv(env, 'openai_base_url');
-  const model = await getConfigByEnv(env, 'openai_model');
-  if (!apiKey || !baseUrl || !model) {
-    throw new Error('LLM not configured');
-  }
-
-  const messages = buildPrompt(instruction, board.width, board.height, board.elements, stepHint);
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const messages = buildPrompt(input.instruction, input.width, input.height, input.elements, input.stepHint);
+  const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ model, messages, max_tokens: 2048, temperature: 0.7 }),
+    body: JSON.stringify({ model: config.model, messages, max_tokens: 2048, temperature: 0.7 }),
   });
   if (!res.ok) {
     const body = await res.text();

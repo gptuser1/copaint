@@ -1,9 +1,9 @@
-// Queues Consumer：执行 AI 绘制任务（单次 / 多步链式）
-import { getBoard, addElement } from '../services/store';
-import { generateElements } from './llm';
-import { broadcast } from '../routes/board';
-import type { AiJob, BoardElement } from '../types';
-import type { Env } from '../env';
+// AI 用例层：执行 AI 绘制任务（单次 / 多步链式）+ Queues 消费入口
+import { getBoard, addElement } from '../infrastructure/db/board-repo';
+import { generateElements } from '../infrastructure/ai/client';
+import { requireConfig } from './config';
+import { broadcast } from '../realtime/broadcaster';
+import type { AiJob, BoardElement } from '../domain/types';
 
 // 多步任务：每步生成一小批元素并广播
 export async function runAiJob(env: Env, job: AiJob): Promise<void> {
@@ -14,7 +14,23 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
     ? `这是第 ${job.stepIndex + 1}/${job.totalSteps} 步。基于当前画布，本次只画出这一步需要的少量元素（1-2个）。`
     : '一次性画出指令描述的全部内容（可多个元素）。';
 
-  const partials = await generateElements(env, job.instruction, { width: board.meta.width, height: board.meta.height, elements: board.elements }, stepHint);
+  // LLM 必需配置，未配置即报错（无兜底）
+  const [apiKey, baseUrl, model] = await Promise.all([
+    requireConfig(env, 'openai_api_key'),
+    requireConfig(env, 'openai_base_url'),
+    requireConfig(env, 'openai_model'),
+  ]);
+
+  const partials = await generateElements(
+    { apiKey, baseUrl, model },
+    {
+      instruction: job.instruction,
+      width: board.meta.width,
+      height: board.meta.height,
+      elements: board.elements,
+      stepHint,
+    },
+  );
   if (partials.length === 0) return;
 
   // 写入元素并逐个广播

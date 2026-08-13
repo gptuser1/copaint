@@ -1,3 +1,4 @@
+// D1 REST 客户端（Ocean），复用 kbox 的抽象层
 const DEFAULT_API_BASE = 'https://ocean.klinux.dpdns.org';
 const FETCH_TIMEOUT = 15000;
 
@@ -60,7 +61,7 @@ async function request<T>(
       throw new DbError('请求超时', 408, url.split('?')[0]);
     }
     if (e instanceof TypeError && e.message.includes('fetch')) {
-      throw new DbError('网络连接失败，请检查D1 API是否可达', 503, url.split('?')[0]);
+      throw new DbError('网络连接失败', 503, url.split('?')[0]);
     }
     throw new DbError(
       e instanceof Error ? e.message : '未知错误',

@@ -1,7 +1,7 @@
 // Konva 画布：绘制工具交互
 import { useRef, useState } from 'react';
 import { Stage, Layer, Line, Rect, Ellipse } from 'react-konva';
-import type { BoardElement, ElementType } from './types';
+import type { BoardElement, ElementType } from '../domain/types';
 
 interface DrawCanvasProps {
   elements: BoardElement[];
@@ -61,7 +61,7 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
   const end = () => {
     if (!drawingRef.current || !draft) return;
     drawingRef.current = false;
-    const base = { color, strokeWidth, by: 'user' };
+    const base = { color, strokeWidth, by: 'user' as const };
     if (tool === 'pen' || tool === 'eraser') {
       if (draft.points.length >= 4) onCommit({ type: tool, points: draft.points, ...base });
     } else if (tool === 'line') {

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DrawCanvas } from './DrawCanvas';
 import * as api from './api';
-import type { BoardElement, ElementType } from './types';
+import type { BoardElement, ElementType } from '../domain/types';
 
 const TOOLS: { id: ElementType; label: string }[] = [
   { id: 'pen', label: '画笔' },

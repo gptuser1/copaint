@@ -1,6 +1,6 @@
 // 基于 pngjs 的纯 JS 光栅渲染器（无原生依赖，workerd 兼容）
 import { PNG } from 'pngjs';
-import type { BoardElement } from '../types';
+import type { BoardElement } from '../../domain/types';
 
 function hexToRgb(hex: string): [number, number, number] {
   let h = hex.replace('#', '');
@@ -17,7 +17,6 @@ function hexToRgba(hex: string, alpha: number): [number, number, number, number]
 function setPx(buf: Buffer, w: number, x: number, y: number, c: [number, number, number, number]) {
   if (x < 0 || y < 0 || x >= w) return;
   const i = (y * w + x) * 4;
-  // 简单 alpha 混合到白底
   const a = c[3] / 255;
   buf[i] = Math.round(c[0] * a + buf[i] * (1 - a));
   buf[i + 1] = Math.round(c[1] * a + buf[i + 1] * (1 - a));

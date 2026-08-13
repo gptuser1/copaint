@@ -4,7 +4,6 @@
     "module": "ES2022",
     "moduleResolution": "bundler",
     "lib": ["ES2021"],
-    "types": ["@cloudflare/workers-types"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -12,6 +11,6 @@
     "esModuleInterop": true,
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "worker-configuration.d.ts"],
   "exclude": ["src/frontend/**"]
 }

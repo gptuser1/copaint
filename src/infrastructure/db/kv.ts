@@ -1,9 +1,7 @@
-import { createDb, DbError } from '../abstraction/d1';
+import { createDb, DbError } from './d1-client';
 
-// 表结构：namespace + key 联合主键，value 存 JSON 字符串
-// 注：与 kbox 共用同一 Ocean 时使用独立表名 copaint_kv，避免冲突
+// 命名空间 + 键联合主键的键值存储（独立表名，避免与其他数据冲突）
 
-// 按连接缓存建表状态
 const kvTableReady = new Map<string, boolean>();
 const kvTableError = new Map<string, string | null>();
 
@@ -87,9 +85,8 @@ export function createKv(token: string, base?: string) {
       const db = createDb(token, apiBase);
       let rows: Array<{ key: string; value: string }>;
       if (keyPrefix) {
-        // 前缀匹配
         rows = await db.queryAll(
-          `SELECT key, value FROM kbox_kv WHERE namespace = ? AND key LIKE ? ORDER BY key`,
+          `SELECT key, value FROM copaint_kv WHERE namespace = ? AND key LIKE ? ORDER BY key`,
           [namespace, keyPrefix + '%']
         );
       } else {

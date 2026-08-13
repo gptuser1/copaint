@@ -1,3 +1,4 @@
+// AES-GCM 加解密，用于敏感配置存储
 const PBKDF2_ITERATIONS = 100000;
 const KEY_LENGTH = 256;
 const IV_LENGTH = 12;

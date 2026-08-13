@@ -1,41 +1,27 @@
+// Worker 入口：装配 Hono app、挂载路由、导出 fetch / queue / DO 类
 import { Hono } from 'hono';
-import { Env } from './env';
-import { boardApp } from './routes/board';
-import { BoardHub } from './ws/board-hub';
-import { queueConsumer } from './ai/consumer';
-import type { AiJob } from './types';
+import { boardsApp } from './routes/boards';
+import { aiApp } from './routes/ai';
+import { mountWs } from './routes/ws';
+import { BoardHub } from './realtime/board-hub';
+import { queueConsumer } from './services/ai';
+import { AppError } from './domain/errors';
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.route('/api/boards', boardApp);
-
-// WebSocket 实时连接：转发到 BoardHub DO 完成升级
-app.get('/boards/:id/ws', (c) => {
-  const id = c.env.BOARD_HUB.idFromName(c.req.param('id'));
-  const stub = c.env.BOARD_HUB.get(id);
-  return stub.fetch(c.req.raw);
+// 统一错误映射（AppError → HTTP 响应）
+app.onError((err, c) => {
+  if (err instanceof AppError) {
+    return c.json({ error: err.message, code: err.code }, err.status as any);
+  }
+  console.error('unhandled error:', err);
+  return c.json({ error: 'internal error' }, 500);
 });
 
-// AI 指令入口：入队（单次或多步）
-app.post('/api/boards/:id/ai', async (c) => {
-  const id = c.req.param('id');
-  const body = await c.req.json().catch(() => ({}));
-  const instruction = (body.instruction || '').trim();
-  if (!instruction) return c.json({ error: 'instruction required' }, 400);
-  const mode: 'once' | 'multi' = body.mode === 'multi' ? 'multi' : 'once';
-  const totalSteps = mode === 'multi' ? Math.max(1, Math.min(10, Number(body.steps) || 5)) : 1;
-  const delayMs = Number(body.delayMs) > 0 ? Number(body.delayMs) : 2000;
-  const job: AiJob = {
-    boardId: id,
-    instruction,
-    mode,
-    stepIndex: 0,
-    totalSteps,
-    delayMs,
-  };
-  await c.env.AI_QUEUE.send(job);
-  return c.json({ ok: true, mode, totalSteps });
-});
+// 业务路由
+app.route('/api/boards', boardsApp);
+app.route('/api/boards', aiApp);
+mountWs(app);
 
 app.get('/api', (c) => {
   return c.json({

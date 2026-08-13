@@ -1,5 +1,5 @@
 // REST + WebSocket 封装
-import type { BoardElement, BoardState, WsMessage } from './types';
+import type { BoardElement, BoardState, WsMessage } from '../domain/types';
 
 export const BOARD_ID = 'default';
 
