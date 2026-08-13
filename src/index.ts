@@ -2,9 +2,11 @@
 import { Hono } from 'hono';
 import { boardsApp } from './routes/boards';
 import { aiApp } from './routes/ai';
+import { configApp } from './routes/config';
 import { mountWs } from './routes/ws';
 import { BoardHub } from './realtime/board-hub';
 import { queueConsumer } from './services/ai';
+import { authMiddleware } from './services/auth';
 import { AppError } from './domain/errors';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -18,9 +20,16 @@ app.onError((err, c) => {
   return c.json({ error: 'internal error' }, 500);
 });
 
+// 全局鉴权：所有 /api/* 需携带令牌（与绑定的 SECRET 比对）
+app.use('/api/*', authMiddleware);
+
+// 鉴权验证
+app.get('/api/verify', (c) => c.json({ ok: true, message: '令牌有效' }));
+
 // 业务路由
 app.route('/api/boards', boardsApp);
 app.route('/api/boards', aiApp);
+app.route('/api/config', configApp);
 mountWs(app);
 
 app.get('/api', (c) => {
