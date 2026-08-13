@@ -28,22 +28,6 @@ boardsApp.get('/:id/png', async (c) => {
   });
 });
 
-// 添加元素
-boardsApp.post('/:id/elements', async (c) => {
-  const id = c.req.param('id');
-  const body = await c.req.json();
-  const { type, points, x, y, width, height, x2, y2, color, strokeWidth, by } = body as any;
-  if (!type) throw new ValidationError('type required');
-  const el = await board.createElement(c.env, id, {
-    type,
-    points, x, y, width, height, x2, y2,
-    color: color || '#000000',
-    strokeWidth: strokeWidth ?? 2,
-    by: by || 'api',
-  });
-  return c.json(el, 201);
-});
-
 // 更新元素
 boardsApp.patch('/:id/elements/:eid', async (c) => {
   const id = c.req.param('id');
@@ -68,17 +52,7 @@ boardsApp.post('/:id/clear', async (c) => {
   return c.json({ ok: true });
 });
 
-// 批量操作（外部 API）
-boardsApp.post('/:id/ops', async (c) => {
-  const id = c.req.param('id');
-  const raw = await c.req.json();
-  const ops = Array.isArray(raw) ? raw : (raw as any)?.ops;
-  if (!Array.isArray(ops)) throw new ValidationError('ops must be an array');
-  const result = await board.batchOps(c.env, id, ops);
-  return c.json({ ...result, ok: true });
-});
-
-// 直接执行 turtle 脚本（agent 自己把自然语言翻译成脚本后提交，不经内置 LLM）
+// 直接执行 turtle 脚本（agent / 前端统一走 turtle 落笔，不经内置 LLM）
 boardsApp.post('/:id/turtle', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));

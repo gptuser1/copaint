@@ -16,6 +16,41 @@ const TOOLS: { id: ElementType; label: string }[] = [
 const BOARD_WIDTH = 400;
 const BOARD_HEIGHT = 300;
 
+// 画布坐标（左上原点、y 向下）→ turtle 逻辑坐标（中心原点、y 向上）
+function turtlePt(x: number, y: number): string {
+  const lx = Math.round(x - BOARD_WIDTH / 2);
+  const ly = Math.round(BOARD_HEIGHT / 2 - y);
+  return `${lx} ${ly}`;
+}
+
+// 把一次手绘动作翻译成 turtle 脚本（前端统一走 turtle 落笔）
+function elementToTurtleScript(el: Partial<BoardElement> & { id?: string }): string {
+  const lines: string[] = [`color ${el.color || '#000000'}`, `width ${el.strokeWidth ?? 3}`];
+  const type = el.type;
+  if (type === 'pen') {
+    const pts = el.points || [];
+    lines.push('pd');
+    for (let i = 0; i + 1 < pts.length; i += 2) lines.push(`goto ${turtlePt(pts[i], pts[i + 1])}`);
+  } else if (type === 'line') {
+    lines.push('pd');
+    lines.push(`goto ${turtlePt(el.x || 0, el.y || 0)}`);
+    lines.push(`goto ${turtlePt(el.x2 || 0, el.y2 || 0)}`);
+  } else if (type === 'rect') {
+    const x = el.x || 0, y = el.y || 0, w = el.width || 0, h = el.height || 0;
+    lines.push('pd');
+    for (const [px, py] of [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]]) {
+      lines.push(`goto ${turtlePt(px, py)}`);
+    }
+  } else if (type === 'ellipse') {
+    const cx = (el.x || 0) + (el.width || 0) / 2;
+    const cy = (el.y || 0) + (el.height || 0) / 2;
+    lines.push('pu');
+    lines.push(`goto ${turtlePt(cx, cy)}`);
+    lines.push(`ellipse ${Math.max(0.5, (el.width || 0) / 2)} ${Math.max(0.5, (el.height || 0) / 2)}`);
+  }
+  return lines.join('\n');
+}
+
 // AI 执行日志条目
 interface AiLog {
   id: number;
@@ -162,32 +197,19 @@ export function App() {
     }
   };
 
-  // 用户绘制提交：乐观更新 + 推送后端
-  const handleCommit = useCallback((el: Partial<BoardElement> & { id?: string }) => {
-    const tempId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const optimistic: BoardElement = {
-      id: tempId,
-      type: el.type!,
-      color: el.color || color,
-      strokeWidth: el.strokeWidth ?? strokeWidth,
-      by: 'user',
-      createdAt: Date.now(),
-      ...(el.points ? { points: el.points } : {}),
-      ...(el.x != null ? { x: el.x } : {}),
-      ...(el.y != null ? { y: el.y } : {}),
-      ...(el.width != null ? { width: el.width } : {}),
-      ...(el.height != null ? { height: el.height } : {}),
-      ...(el.x2 != null ? { x2: el.x2 } : {}),
-      ...(el.y2 != null ? { y2: el.y2 } : {}),
-    };
-    setElements((prev) => [...prev, optimistic]);
-    api.addElement(el).then((saved) => {
-      setElements((prev) => prev.map((e) => (e.id === tempId ? saved : e)));
-    }).catch((e) => {
-      setError(String(e.message || e));
-      setElements((prev) => prev.filter((e) => e.id !== tempId));
-    });
-  }, [color, strokeWidth]);
+  // 用户手绘提交：翻译成 turtle 脚本，经 /turtle 落笔后回读画布
+  const handleCommit = useCallback(async (el: Partial<BoardElement> & { id?: string }) => {
+    const script = elementToTurtleScript(el);
+    if (!script.trim()) return;
+    setError('');
+    try {
+      await api.runTurtle(script);
+      const s = await api.getBoard();
+      setElements(s.elements);
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
+  }, []);
 
   // 撤销：移除最后一个元素
   const handleUndo = useCallback(() => {

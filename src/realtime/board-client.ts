@@ -58,13 +58,6 @@ export function clearBoard(env: Env, boardId: string): Promise<void> {
   return call(env, boardId, { path: '/clear', method: 'POST' }).then(() => undefined);
 }
 
-// 批量操作并广播；返回实际新增/删除/更新计数
-export function batchOps(env: Env, boardId: string, ops: Array<Record<string, any>>): Promise<{ ok: boolean; added: BoardElement[]; deleted: number; updated: number }> {
-  return call(env, boardId, {
-    path: '/ops', method: 'POST', body: JSON.stringify({ ops }),
-  }).then((r) => r.json());
-}
-
 // 读取当前 AI 执行代次
 export function getAiEpoch(env: Env, boardId: string): Promise<number> {
   return call(env, boardId, { path: '/ai/epoch', method: 'GET' })

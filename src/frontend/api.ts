@@ -1,5 +1,5 @@
 // REST + WebSocket 封装（统一带令牌鉴权，单一固定画板）
-import type { BoardElement, BoardState, WsMessage } from '../domain/types';
+import type { BoardState, WsMessage } from '../domain/types';
 
 const TOKEN_KEY = 'copaint_token';
 
@@ -57,12 +57,12 @@ export function getBoard(): Promise<BoardState> {
   return req(`/api/boards/${encodeURIComponent(currentBoardId)}`);
 }
 
-export function addElement(el: Partial<BoardElement> & { id?: string }): Promise<BoardElement> {
-  return req(`/api/boards/${encodeURIComponent(currentBoardId)}/elements`, { method: 'POST', body: JSON.stringify(el) });
-}
-
-export function updateElement(eid: string, patch: Partial<BoardElement>): Promise<BoardElement> {
-  return req(`/api/boards/${encodeURIComponent(currentBoardId)}/elements/${eid}`, { method: 'PATCH', body: JSON.stringify(patch) });
+// 通过 turtle 脚本落笔（前端手绘也统一走 turtle）
+export function runTurtle(script: string): Promise<{ ok: boolean; added: number }> {
+  return req(`/api/boards/${encodeURIComponent(currentBoardId)}/turtle`, {
+    method: 'POST',
+    body: JSON.stringify({ script }),
+  });
 }
 
 export function deleteElement(eid: string): Promise<{ ok: boolean }> {

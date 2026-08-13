@@ -3,7 +3,7 @@
 // 0° 朝右、角度逆时针为正（left/lt 增大 heading）。输出时映射回画布坐标（左上原点、y 向下）。
 // 支持：fd/bk(移动), lt/rt(转向), pu/pd(抬笔落笔), color(双色)/pencolor/fillcolor,
 //       width(粗细), goto/setx/sety/setheading/home(定位), circle(圆/弧), dot(点),
-//       begin_fill/end_fill(填充), repeat(循环)。纯 JS，无依赖。
+//       rect/ellipse/line(几何图形), begin_fill/end_fill(填充), repeat(循环)。纯 JS，无依赖。
 import type { BoardElement } from '../domain/types';
 
 // 一段连续的落笔笔画（pen 元素的数据来源）
@@ -42,7 +42,8 @@ const COMMANDS = new Set([
   'pu', 'penup', 'up', 'pd', 'pendown', 'down',
   'color', 'pencolor', 'fillcolor', 'width', 'pensize',
   'goto', 'setpos', 'setx', 'sety', 'setheading', 'seth', 'home',
-  'circle', 'dot', 'begin_fill', 'bf', 'end_fill', 'ef',
+  'circle', 'dot', 'rect', 'rectangle', 'ellipse', 'oval', 'line',
+  'begin_fill', 'bf', 'end_fill', 'ef',
   'repeat', 'pos', 'heading', 'isdown',
 ]);
 
@@ -238,6 +239,52 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     items.push({ points: pts, fill: c, color: c, strokeWidth: 0 });
   }
 
+  // 矩形：当前点为左下角（逻辑坐标，+x 宽、+y 高），画闭合轮廓
+  function rectCmd(w: number, h: number) {
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w === 0 || h === 0) return;
+    const wasDown = penDown;
+    flush();
+    penDown = true;
+    const x0 = x, y0 = y;
+    gotoAbs(x0, y0);
+    gotoAbs(x0 + w, y0);
+    gotoAbs(x0 + w, y0 + h);
+    gotoAbs(x0, y0 + h);
+    gotoAbs(x0, y0);
+    if (!wasDown) { flush(); penDown = false; }
+  }
+
+  // 椭圆：以当前点为圆心，rx/ry 为横纵半径（逻辑坐标）
+  function ellipseCmd(rx: number, ry: number) {
+    if (!Number.isFinite(rx) || !Number.isFinite(ry) || rx === 0 || ry === 0) return;
+    const wasDown = penDown;
+    flush();
+    const cx = x, cy = y;
+    // 抬笔移到椭圆起点（避免从圆心拉出引线）
+    penDown = false;
+    gotoAbs(cx + rx, cy);
+    penDown = true;
+    const n = 48;
+    for (let k = 0; k <= n && ops <= maxOps; k++) {
+      const a = (k / n) * Math.PI * 2;
+      gotoAbs(cx + rx * Math.cos(a), cy + ry * Math.sin(a));
+    }
+    if (!wasDown) { flush(); penDown = false; }
+  }
+
+  // 直线：从 (x1,y1) 画到 (x2,y2)（逻辑坐标）
+  function lineCmd(x1: number, y1: number, x2: number, y2: number) {
+    if (![x1, y1, x2, y2].every(Number.isFinite)) return;
+    const wasDown = penDown;
+    flush();
+    // 抬笔移到起点，再落笔画到终点
+    penDown = false;
+    gotoAbs(x1, y1);
+    penDown = true;
+    gotoAbs(x2, y2);
+    if (!wasDown) { flush(); penDown = false; }
+  }
+
   function exec(cmds: Cmd[]) {
     for (const c of cmds) {
       if (ops > maxOps) break;
@@ -284,6 +331,9 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
         }
         case 'circle': circleCmd(Number(a[0]), Number(a[1]) || 360, a[2] !== undefined ? Number(a[2]) : undefined); break;
         case 'dot': dotCmd(Number(a[0]) || 2, a[1]); break;
+        case 'rect': case 'rectangle': rectCmd(Number(a[0]), Number(a[1])); break;
+        case 'ellipse': case 'oval': ellipseCmd(Number(a[0]), Number(a[1])); break;
+        case 'line': lineCmd(Number(a[0]), Number(a[1]), Number(a[2]), Number(a[3])); break;
         case 'begin_fill': case 'bf': endFill(); filling = true; fillPoints = []; break;
         case 'end_fill': case 'ef': endFill(); break;
         default: break; // pos/heading/isdown 查询类，本实现无需输出
