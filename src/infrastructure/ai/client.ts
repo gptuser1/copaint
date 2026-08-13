@@ -117,11 +117,11 @@ function num(v: any): number | undefined {
   return Number.isFinite(Number(v)) ? Number(v) : undefined;
 }
 
-// 调用 LLM 生成元素
-export async function generateElements(
+// 调用 LLM 返回原始文本（不解析，供测试/调试）
+export async function generateRawContent(
   config: LlmConfig,
   input: DrawInput,
-): Promise<Partial<BoardElement>[]> {
+): Promise<string> {
   const messages = buildPrompt(input.instruction, input.width, input.height, input.elements, input.stepHint);
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -136,7 +136,14 @@ export async function generateElements(
     throw new Error(`LLM error ${res.status}: ${body.slice(0, 300)}`);
   }
   const data: { choices?: Array<{ message?: { content?: string } }> } = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) return [];
+  return data?.choices?.[0]?.message?.content || '';
+}
+
+// 调用 LLM 生成元素
+export async function generateElements(
+  config: LlmConfig,
+  input: DrawInput,
+): Promise<Partial<BoardElement>[]> {
+  const content = await generateRawContent(config, input);
   return parseElements(content);
 }

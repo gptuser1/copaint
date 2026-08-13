@@ -218,6 +218,23 @@ export function App() {
     window.open(api.exportPngUrl(), '_blank');
   }, []);
 
+  // 测试 AI：直接请求不入队，把原始响应显示到日志区
+  const handleTestAi = useCallback(async () => {
+    const instr = instruction.trim();
+    if (!instr) return;
+    setAiBusy(true);
+    setError('');
+    try {
+      const res = await api.testAi(instr);
+      addLog({ message: `🔬 测试响应: ${res.raw}`, mode: 'once', success: true });
+    } catch (e) {
+      const msg = String((e as Error).message || e);
+      addLog({ message: `🔬 测试失败: ${msg}`, mode: 'once', success: false, error: msg });
+    } finally {
+      setAiBusy(false);
+    }
+  }, [instruction, addLog]);
+
   const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer' };
 
   // 未登录：令牌输入界面
@@ -306,7 +323,10 @@ export function App() {
           </>
         )}
         <button onClick={handleAi} disabled={aiBusy} style={{ ...btnStyle, border: '1px solid #999', background: aiBusy ? '#eee' : '#4caf50', color: aiBusy ? '#999' : '#fff' }}>
-          {aiBusy ? '绘制中…' : '🤖 让 AI 画'}
+          {aiBusy ? '处理中…' : '🤖 让 AI 画'}
+        </button>
+        <button onClick={handleTestAi} disabled={aiBusy} style={{ ...btnStyle, border: '1px solid #999', background: aiBusy ? '#eee' : '#ece3ff', color: aiBusy ? '#999' : '#5b21b6' }}>
+          {aiBusy ? '处理中…' : '🔬 测试 AI'}
         </button>
         <button onClick={() => setAiLogs([])} style={{ ...btnStyle, border: '1px solid #999' }}>清空日志</button>
       </div>

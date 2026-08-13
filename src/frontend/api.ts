@@ -70,6 +70,14 @@ export function runAi(instruction: string, mode: 'once' | 'multi', steps: number
   });
 }
 
+// 直接测试：不入队，返回 LLM 原始响应
+export function testAi(instruction: string): Promise<{ ok: boolean; raw: string }> {
+  return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai/test`, {
+    method: 'POST',
+    body: JSON.stringify({ instruction }),
+  });
+}
+
 export function exportPngUrl(): string {
   return `/api/boards/${encodeURIComponent(currentBoardId)}/png?token=${encodeURIComponent(currentToken)}`;
 }
