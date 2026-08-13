@@ -155,15 +155,12 @@ export function App() {
   useEffect(() => {
     if (!authed) return;
     let closed = false;
+    let ws: WebSocket | null = null;
+    let timer: any;
     api.getBoard().then((s) => {
       if (closed) return;
       setElements(s.elements);
     }).catch(() => {});
-    let ws = api.connectWs(handleWs);
-    let timer: any;
-    const reconnect = () => {
-      timer = setTimeout(() => { ws = api.connectWs(handleWs); }, 2000);
-    };
     function handleWs(msg: { event: string; payload: any }) {
       if (closed) return;
       if (msg.event === 'ai-log') {
@@ -180,9 +177,24 @@ export function App() {
       }
       setElements((prev) => applyWs(prev, msg));
     }
-    ws.onclose = () => { if (!closed) reconnect(); };
-    ws.onerror = () => { try { ws.close(); } catch {} };
-    return () => { closed = true; clearTimeout(timer); try { ws.close(); } catch {} };
+    // connectWs 需先异步换取临时 token；失败则延迟重连
+    const connect = async () => {
+      if (closed) return;
+      try {
+        const next = await api.connectWs(handleWs);
+        if (closed) { try { next.close(); } catch {} return; }
+        ws = next;
+        next.onclose = () => { if (!closed) reconnect(); };
+        next.onerror = () => { try { next.close(); } catch {} };
+      } catch {
+        reconnect();
+      }
+    };
+    const reconnect = () => {
+      timer = setTimeout(connect, 2000);
+    };
+    connect();
+    return () => { closed = true; clearTimeout(timer); try { ws?.close(); } catch {} };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed]);
 

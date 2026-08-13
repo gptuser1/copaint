@@ -124,10 +124,13 @@ export function deleteConfigItem(key: string): Promise<{ ok: boolean }> {
   return req(`/api/config/${key}`, { method: 'DELETE' });
 }
 
-export function connectWs(onMessage: (msg: WsMessage) => void): WebSocket {
+// WS 连接：先用真实 token 换取临时 token（24h，够长连接和重连周期），
+// 避免真实 token 出现在连接 URL 里
+export async function connectWs(onMessage: (msg: WsMessage) => void): Promise<WebSocket> {
+  const { token } = await getTemporaryToken(86400);
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const id = encodeURIComponent(currentBoardId);
-  const ws = new WebSocket(`${proto}://${location.host}/boards/${id}/ws?token=${encodeURIComponent(currentToken)}`);
+  const ws = new WebSocket(`${proto}://${location.host}/boards/${id}/ws?token=${encodeURIComponent(token)}`);
   ws.onmessage = (e) => {
     try {
       onMessage(JSON.parse(e.data) as WsMessage);

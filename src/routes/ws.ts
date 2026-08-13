@@ -1,5 +1,6 @@
 // WebSocket 升级路由：校验令牌后转发给 BoardHub DO
 import type { Hono } from 'hono';
+import { verifyTemporaryToken } from '../services/token';
 
 export function mountWs(app: Hono<{ Bindings: Env }>): void {
   app.get('/boards/:id/ws', async (c) => {
@@ -12,7 +13,8 @@ export function mountWs(app: Hono<{ Bindings: Env }>): void {
       token = c.req.query('token')?.trim() || '';
     }
     const expected = await c.env.SECRET.get();
-    if (!token || token !== expected) {
+    // 原始字符串比较，或 HMAC 临时 token
+    if (!token || (token !== expected && !(await verifyTemporaryToken(token, expected)))) {
       return c.json({ error: '令牌无效' }, 401);
     }
     const id = c.env.BOARD_HUB.idFromName(c.req.param('id'));
