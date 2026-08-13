@@ -65,6 +65,20 @@ export function batchOps(env: Env, boardId: string, ops: Array<Record<string, an
   }).then((r) => r.json());
 }
 
+// 读取当前 AI 执行代次
+export function getAiEpoch(env: Env, boardId: string): Promise<number> {
+  return call(env, boardId, { path: '/ai/epoch', method: 'GET' })
+    .then((r) => r.json())
+    .then((d: any) => d.epoch);
+}
+
+// 终止当前队列所有 AI 任务（递增代次，使更早入队的任务失效）
+export function cancelAiTasks(env: Env, boardId: string): Promise<number> {
+  return call(env, boardId, { path: '/ai/cancel', method: 'POST' })
+    .then((r) => r.json())
+    .then((d: any) => d.epoch);
+}
+
 // 仅广播（跨上下文，如 AI consumer 在 Worker 侧）
 export function broadcast(env: Env, boardId: string, event: WsEvent, payload: any): Promise<void> {
   return call(env, boardId, {

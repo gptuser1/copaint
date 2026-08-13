@@ -1,6 +1,6 @@
 // AI 用例层：执行 AI 绘制任务（单次 / 多步链式）+ Queues 消费入口
 // 读画板与写元素都走 BoardHub DO，配置走 Ocean
-import { getState, addElement, broadcast } from '../realtime/board-client';
+import { getState, addElement, broadcast, getAiEpoch } from '../realtime/board-client';
 import { generateElements } from '../infrastructure/ai/client';
 import { requireConfig } from './config';
 import type { AiJob, BoardElement } from '../domain/types';
@@ -9,6 +9,21 @@ import type { AiJob, BoardElement } from '../domain/types';
 export async function runAiJob(env: Env, job: AiJob): Promise<void> {
   const board = await getState(env, job.boardId);
   if (!board) return;
+
+  // 代次校验：任务入队后若队列被终止，则当前代次增大，旧任务不再执行
+  const currentEpoch = await getAiEpoch(env, job.boardId);
+  if (job.epoch < currentEpoch) {
+    await broadcast(env, job.boardId, 'ai-log', {
+      step: job.stepIndex,
+      totalSteps: job.totalSteps,
+      mode: job.mode,
+      instruction: job.instruction,
+      message: '⏹ 任务已被终止，跳过执行',
+      success: true,
+      cancelled: true,
+    });
+    return;
+  }
 
   const stepHint = job.mode === 'multi'
     ? `这是第 ${job.stepIndex + 1}/${job.totalSteps} 步。基于当前画布，本次只画出这一步需要的少量元素（1-2个）。`

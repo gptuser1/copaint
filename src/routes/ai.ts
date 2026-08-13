@@ -1,6 +1,6 @@
-// AI 指令路由：入队（单次或多步） + 直接测试（不入队）
+// AI 指令路由：入队（单次或多步） + 直接测试（不入队）+ 终止队列
 import { Hono } from 'hono';
-import { getState } from '../realtime/board-client';
+import { getState, getAiEpoch, cancelAiTasks } from '../realtime/board-client';
 import { requireConfig } from '../services/config';
 import { generateRawContent } from '../infrastructure/ai/client';
 import { NotFoundError, ValidationError, AppError } from '../domain/errors';
@@ -30,12 +30,20 @@ aiApp.post('/:id/ai', async (c) => {
     stepIndex: 0,
     totalSteps,
     delayMs,
+    epoch: await getAiEpoch(c.env, id),
     temperature,
     maxTokens,
     thinking,
   };
   await c.env.AI_QUEUE.send(job);
   return c.json({ ok: true, mode, totalSteps });
+});
+
+// 终止当前队列所有 AI 任务
+aiApp.post('/:id/ai/cancel', async (c) => {
+  const id = c.req.param('id');
+  const epoch = await cancelAiTasks(c.env, id);
+  return c.json({ ok: true, epoch });
 });
 
 // 直接测试：不入队，直接调用 LLM 并返回原始响应（供调试）

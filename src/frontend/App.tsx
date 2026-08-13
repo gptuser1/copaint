@@ -239,6 +239,17 @@ export function App() {
     }
   }, [instruction, addLog, temperature, maxTokens, thinking]);
 
+  // 终止当前队列所有 AI 任务
+  const handleCancelAi = useCallback(async () => {
+    setError('');
+    try {
+      const res = await api.cancelAi();
+      addLog({ message: `⏹ 已终止 AI 队列（epoch=${res.epoch}），排队的旧任务将被跳过`, mode: 'once', success: true });
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
+  }, [addLog]);
+
   const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer' };
 
   // 未登录：令牌输入界面
@@ -332,6 +343,7 @@ export function App() {
         <button onClick={handleTestAi} disabled={aiBusy} style={{ ...btnStyle, border: '1px solid #999', background: aiBusy ? '#eee' : '#ece3ff', color: aiBusy ? '#999' : '#5b21b6' }}>
           {aiBusy ? '处理中…' : '🔬 测试 AI'}
         </button>
+        <button onClick={handleCancelAi} style={{ ...btnStyle, border: '1px solid #b91c1c', background: '#fff5f5', color: '#b91c1c' }}>⏹ 终止 AI 任务</button>
         <button onClick={() => setAiLogs([])} style={{ ...btnStyle, border: '1px solid #999' }}>清空日志</button>
       </div>
 

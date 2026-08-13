@@ -138,6 +138,8 @@ export async function generateRawContent(
     messages,
     max_tokens: params?.maxTokens ?? 2048,
     temperature: params?.temperature ?? 0.7,
+    // 显式非流式，避免服务商侧流式超时（可能导致 524）
+    stream: false,
   };
   // 深度思考开关：仅当显式传入时才带上，避免对不支持思考的模型报错
   if (typeof params?.thinking === 'boolean') {

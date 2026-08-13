@@ -94,6 +94,11 @@ export function testAi(instruction: string, params?: AiParams): Promise<{ ok: bo
   });
 }
 
+// 终止当前队列所有 AI 任务
+export function cancelAi(): Promise<{ ok: boolean; epoch: number }> {
+  return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai/cancel`, { method: 'POST' });
+}
+
 export function exportPngUrl(): string {
   return `/api/boards/${encodeURIComponent(currentBoardId)}/png?token=${encodeURIComponent(currentToken)}`;
 }
