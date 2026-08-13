@@ -109,4 +109,13 @@ describe('turtle', () => {
     // line: 两点线段
     expect(items[2].points.length).toBe(4);
   });
+
+  it('lt turns counter-clockwise (heading+) and rt clockwise', () => {
+    // lt 90 → 朝 +y（逻辑向上）→ 画布 y 减小；rt 90 → 朝 -y → 画布 y 增大
+    const a = runTurtle(`pd lt 90 fd 20`, { startX: 200, startY: 150 });
+    const b = runTurtle(`pd rt 90 fd 20`, { startX: 200, startY: 150 });
+    const pa = a[0].points, pb = b[0].points;
+    expect(Math.round(pa[pa.length - 1])).toBeLessThan(150);
+    expect(Math.round(pb[pb.length - 1])).toBeGreaterThan(150);
+  });
 });

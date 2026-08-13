@@ -298,8 +298,8 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
         }
         case 'fd': case 'forward': move(Number(a[0]) || 0); break;
         case 'bk': case 'back': move(-(Number(a[0]) || 0)); break;
-        case 'lt': case 'left': heading -= Number(a[0]) || 0; break;
-        case 'rt': case 'right': heading += Number(a[0]) || 0; break;
+        case 'lt': case 'left': heading += Number(a[0]) || 0; break; // 左转=逆时针（y 向上时 heading 增大）
+        case 'rt': case 'right': heading -= Number(a[0]) || 0; break; // 右转=顺时针
         case 'pu': case 'penup': case 'up': flush(); penDown = false; break;
         case 'pd': case 'pendown': case 'down': penDown = true; break;
         case 'color': {

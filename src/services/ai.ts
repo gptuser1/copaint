@@ -26,8 +26,8 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
   }
 
   const stepHint = job.mode === 'multi'
-    ? `这是第 ${job.stepIndex + 1}/${job.totalSteps} 步。基于当前画布，本次只画出这一步需要的少量内容（1-2 个图案）。`
-    : '用 turtle 脚本一次性画出指令描述的内容，可结合颜色、粗细、填充与 repeat 表现创意。';
+    ? `这是第 ${job.stepIndex + 1}/${job.totalSteps} 步：只画本步骤要求的内容（1-2 个图案），不要一次画完整个任务，也不要重复上一步已画的内容。`
+    : '用一条 turtle 脚本完整画出指令要求的全部内容。';
 
   try {
     // LLM 必需配置，未配置即报错（无兜底）
