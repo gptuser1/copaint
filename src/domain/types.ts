@@ -8,6 +8,10 @@ export interface BoardElement {
   type: ElementType;
   // 自由路径点集（pen / eraser）
   points?: number[];
+  // pen 可变宽度：与 points 每个顶点对应的笔刷粗细（可选，缺省用 strokeWidth）
+  widths?: number[];
+  // pen 逐段颜色：与 points 每段起点对应（可选，缺省用 color），实现中途换色
+  colors?: string[];
   // 图形（rect / ellipse / line）
   x?: number;
   y?: number;
@@ -41,8 +45,8 @@ export interface BoardState {
 export interface AiJob {
   boardId: string;
   instruction: string;
-  // 'once': 单次 | 'multi': 多步链式
-  mode: 'once' | 'multi';
+  // 'once': 单次 | 'multi': 多步链式 | 'turtle': turtle 脚本绘制
+  mode: 'once' | 'multi' | 'turtle';
   stepIndex: number; // 0-based，当前步
   totalSteps: number; // 多步总步数
   delayMs: number;    // 步间间隔

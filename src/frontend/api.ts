@@ -79,7 +79,7 @@ export interface AiParams {
   thinking?: boolean;
 }
 
-export function runAi(instruction: string, mode: 'once' | 'multi', steps: number, delayMs: number, params?: AiParams): Promise<{ ok: boolean }> {
+export function runAi(instruction: string, mode: 'once' | 'multi' | 'turtle', steps: number, delayMs: number, params?: AiParams): Promise<{ ok: boolean }> {
   return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai`, {
     method: 'POST',
     body: JSON.stringify({ instruction, mode, steps, delayMs, ...params }),

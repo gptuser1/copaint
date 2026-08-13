@@ -83,8 +83,26 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
     const key = el.id;
     switch (el.type) {
       case 'pen':
-      case 'eraser':
-        return <Line key={key} points={el.points || []} stroke={el.color} strokeWidth={el.strokeWidth} lineCap="round" lineJoin="round" />;
+      case 'eraser': {
+        const pts = el.points || [];
+        const widths = el.widths || [];
+        const colors = el.colors || [];
+        const segs: JSX.Element[] = [];
+        for (let i = 2; i + 1 < pts.length; i += 2) {
+          const idx = (i - 2) / 2;
+          segs.push(
+            <Line
+              key={`${el.id}_${idx}`}
+              points={[pts[i - 2], pts[i - 1], pts[i], pts[i + 1]]}
+              stroke={colors[idx] || el.color}
+              strokeWidth={widths[idx] ?? el.strokeWidth}
+              lineCap="round"
+              lineJoin="round"
+            />,
+          );
+        }
+        return <>{segs}</>;
+      }
       case 'line':
         return <Line key={key} points={[el.x || 0, el.y || 0, el.x2 || 0, el.y2 || 0]} stroke={el.color} strokeWidth={el.strokeWidth} lineCap="round" />;
       case 'rect':

@@ -14,7 +14,8 @@ aiApp.post('/:id/ai', async (c) => {
   const instruction = (body.instruction || '').trim();
   if (!instruction) throw new ValidationError('instruction required');
 
-  const mode: 'once' | 'multi' = body.mode === 'multi' ? 'multi' : 'once';
+  const mode: 'once' | 'multi' | 'turtle' =
+    body.mode === 'multi' ? 'multi' : body.mode === 'turtle' ? 'turtle' : 'once';
   const totalSteps = mode === 'multi' ? Math.max(1, Math.min(10, Number(body.steps) || 5)) : 1;
   const delayMs = Number(body.delayMs) > 0 ? Number(body.delayMs) : 2000;
 

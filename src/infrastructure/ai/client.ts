@@ -1,6 +1,7 @@
 // LLM 客户端：把自然语言指令转成画板元素
 // 纯基础设施实现，配置由调用方（services/ai）传入，避免向上依赖
 import type { BoardElement, ElementType } from '../../domain/types';
+import { runTurtle, strokesToElements } from '../turtle';
 
 // AI 不生成橡皮（白色笔触），只生成真实内容元素
 const VALID_TYPES: ElementType[] = ['pen', 'rect', 'ellipse', 'line'];
@@ -172,4 +173,77 @@ export async function generateElements(
 ): Promise<Partial<BoardElement>[]> {
   const content = await generateRawContent(config, input, params);
   return parseElements(content);
+}
+
+// ── Turtle 模式：LLM 输出 turtle 脚本，模拟成手绘路径 ──
+
+const TURTLE_COMMANDS_HELP =
+  'fd <n> 前进 / bk <n> 后退 / lt <deg> 左转 / rt <deg> 右转\n'
+  + 'pu 抬笔 / pd 落笔 / color <颜色> / width <n> 粗细\n'
+  + 'goto <x> <y> / repeat <n> { ... } 循环\n'
+  + '坐标原点在左上角，y 向下为正；0 度朝右，90 度朝下。';
+
+function buildTurtlePrompt(
+  instruction: string,
+  boardWidth: number,
+  boardHeight: number,
+  stepHint: string,
+): Array<{ role: 'system' | 'user'; content: string }> {
+  const systemContent =
+    '你是 turtle 画板助手。用户用自然语言描述要画的内容，你把它翻译成 turtle 绘图脚本。\n'
+    + `画布：宽 ${boardWidth}px，高 ${boardHeight}px，原点左上角，y 向下为正。\n`
+    + `可用命令：\n${TURTLE_COMMANDS_HELP}\n`
+    + '用画笔的连续移动画出内容，可中途换色(width/color)表现细节，用 repeat 画重复图案。\n'
+    + '颜色可用名称或 #hex。只输出脚本，不要解释、不要 markdown 代码块。\n'
+    + `\n${stepHint}`;
+  return [
+    { role: 'system', content: systemContent },
+    { role: 'user', content: `画布尺寸 ${boardWidth}×${boardHeight}。请用 turtle 脚本绘制：${instruction}` },
+  ];
+}
+
+// 从 LLM 原始输出里剥掉代码块围栏，得到纯脚本
+function extractTurtleScript(raw: string): string {
+  const fence = raw.match(/```(?:turtle|python)?\n?([\s\S]*?)```/);
+  if (fence) return fence[1];
+  return raw;
+}
+
+export async function generateTurtleElements(
+  config: LlmConfig,
+  input: DrawInput,
+  params?: LlmParams,
+): Promise<Partial<BoardElement>[]> {
+  const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint);
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages,
+    max_tokens: params?.maxTokens ?? 2048,
+    temperature: params?.temperature ?? 0.7,
+    stream: false,
+  };
+  if (typeof params?.thinking === 'boolean') body.enable_thinking = params.thinking;
+  const res = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`LLM error ${res.status}: ${errBody.slice(0, 300)}`);
+  }
+  const data: { choices?: Array<{ message?: { content?: string } }> } = await res.json();
+  const script = extractTurtleScript(data?.choices?.[0]?.message?.content || '');
+  if (!script.trim()) return [];
+  const strokes = runTurtle(script, {
+    startX: input.width / 2,
+    startY: input.height / 2,
+    startHeading: 0,
+  });
+  return strokesToElements(strokes, { id: `ai_${Date.now().toString(36)}` });
 }

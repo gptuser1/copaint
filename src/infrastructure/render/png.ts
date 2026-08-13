@@ -76,8 +76,15 @@ export function renderBoardToPng(elements: BoardElement[], width: number, height
       case 'pen':
       case 'eraser': {
         const pts = el.points || [];
+        const widths = el.widths || [];
+        const colors = el.colors || [];
         for (let i = 2; i + 1 < pts.length; i += 2) {
-          drawLine(buf, width, pts[i - 2], pts[i - 1], pts[i], pts[i + 1], color, sw);
+          const segColor = colors[(i - 2) / 2] || el.color || '#000000';
+          const c = hexToRgba(segColor, 1);
+          // 段宽：取两端顶点宽度的均值，实现粗细渐变
+          const w0 = widths[(i - 2) / 2] ?? sw;
+          const w1 = widths[(i - 2) / 2 + 1] ?? w0;
+          drawLine(buf, width, pts[i - 2], pts[i - 1], pts[i], pts[i + 1], c, (w0 + w1) / 2);
         }
         break;
       }
