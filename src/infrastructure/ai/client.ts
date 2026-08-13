@@ -25,57 +25,43 @@ export interface LlmParams {
   thinking?: boolean;
 }
 
-// turtle 命令参考，语义与标准 Python turtle 对齐：
-// 逻辑原点在画布中心，+x 向右、+y 向上，0° 朝右、逆时针为正（lt 增大朝向角）
-const TURTLE_COMMANDS_HELP = [
-  '移动: fd <n> 向前 n 像素（n 可负=反向）/ bk <n> 向后 n',
-  '转向: lt <deg> 左转（逆时针）/ rt <deg> 右转（顺时针），deg 为角度数',
-  '画笔: pu 抬笔（移动不画）/ pd 落笔（移动画线）/ width <n> 线宽(正整数)',
-  '颜色: color <描边色> [填充色] / pencolor <描边色> / fillcolor <填充色>',
-  '定位: goto <x> <y> 直线移到绝对坐标 / setx <x> / sety <y> / setheading <deg> / home(回中心朝0度)',
-  '图形: circle <半径> [弧度] 以当前位置为圆心画圆/弧(半径可负,弧度默认360)',
-  '      dot <直径> [色] 实心圆点 / rect <宽> <高> 以当前点为左下角画矩形轮廓',
-  '      ellipse <横半径> <纵半径> 以当前点为圆心画椭圆 / line <x1> <y1> <x2> <y2> 画线段',
-  '填充: begin_fill ... end_fill 之间画的封闭图形用 fillcolor 填充',
-  '循环: repeat <n> { ... } 花括号内命令重复 n 次',
-].join('\n');
-
-// 支持的颜色名（其余用 #rrggbb 或 #rgb hex）
-const COLOR_NAMES_LIST = 'red green blue black white yellow orange purple pink brown gray grey cyan teal gold silver navy lime magenta';
-
 export function buildTurtlePrompt(
   instruction: string,
   boardWidth: number,
   boardHeight: number,
   stepHint: string,
 ): Array<{ role: 'system' | 'user'; content: string }> {
+  const w = Math.round(boardWidth);
+  const h = Math.round(boardHeight);
   const systemContent =
-    '你是 turtle 画板助手。把用户用自然语言描述的绘画需求翻译成 turtle 绘图脚本，脚本会被逐条执行。\n'
+    'role: 自定义 turtle-like 绘图脚本解释器（非 Python turtle），按下方定义把自然语言翻译成脚本\n'
+    + 'canvas:\n'
+    + `  size: 宽 ${w}px 高 ${h}px，中心为原点，四周约 ±${Math.round(w / 2)}, ±${Math.round(h / 2)}\n`
+    + '  axes: +x 右 / +y 向上\n'
+    + '  heading: 0°右 90°上 180°左 270°下；lt 逆时针(+)，rt 顺时针(-)\n'
+    + 'initial: 原点朝右，抬笔(先 pd 才画线)，黑 #000000，线宽 3\n'
+    + 'commands:\n'
+    + '  移动: fd <n> / bk <n>\n'
+    + '  转向: lt <deg> / rt <deg>\n'
+    + '  画笔: pu / pd / width <n>\n'
+    + '  颜色: color <描边> [填充] / pencolor <色> / fillcolor <色>\n'
+    + '  定位: goto <x> <y> / setx <x> / sety <y> / setheading <deg> / home\n'
+    + '  图形: circle <r> [弧度] / dot <直径> [色] / rect <宽> <高> / ellipse <rx> <ry> / line <x1> <y1> <x2> <y2>\n'
+    + '  填充: begin_fill ... end_fill\n'
+    + '  循环: repeat <n> { ... }\n'
+    + 'colors:\n'
+    + '  hex: #rrggbb 或 #rgb（如 #e74c3c / #e7c）\n'
+    + '  names: red green blue black white yellow orange purple pink brown gray grey cyan teal gold silver navy lime magenta\n'
+    + 'output:\n'
+    + '  只输出脚本，无解释/前言/JSON/markdown 围栏\n'
+    + '  一行一条命令，参数空格分隔，数字裸写\n'
+    + '  禁止变量/等号/数学表达式/函数写法(如 fd(50))/括号/引号\n'
+    + '  只允许上述命令，禁止自创\n'
     + '\n'
-    + `画布：宽 ${boardWidth}px，高 ${boardHeight}px。坐标系：原点在画布正中心，+x 向右、+y 向上；`
-    + `朝向角 0°=朝右(+x)、90°=朝上(+y)、180°=朝左、270°=朝下，逆时针为正（lt 增大、rt 减小朝向角）。`
-    + `画布四周坐标约为 (±${Math.round(boardWidth / 2)}, ±${Math.round(boardHeight / 2)})，内容尽量控制在画布内。\n`
-    + '\n'
-    + `可用命令（只允许用这些，禁止自创）：\n${TURTLE_COMMANDS_HELP}\n`
-    + '\n'
-    + `颜色：支持 #rrggbb（如 #e74c3c）或 #rgb 简写（如 #e7c），也支持颜色名：${COLOR_NAMES_LIST}。`
-    + '名字不区分大小写。更精确的颜色请用 #rrggbb。\n'
-    + '\n'
-    + '初始状态：笔在原点 (0,0)，朝 0°（右），抬笔（pu）状态——要画线必须先 pd 落笔；'
-    + '描边色 #000000 黑，线宽 3。换色用 color，改粗细用 width。\n'
-    + '\n'
-    + '输出格式（必须严格遵守）：\n'
-    + '- 只输出 turtle 脚本本身，不要任何解释、前言、总结，不要 markdown 代码块围栏（```），不要 JSON。\n'
-    + '- 每条命令独占一行，命令与其参数之间用空格分隔，按上面列出的参数顺序。\n'
-    + '- 数字直接写裸值（如 100、-50、3.5），不要引号、括号、逗号、单位。\n'
-    + '- 禁止：变量、等号赋值、数学表达式（如 2*50、90+45）、函数式写法（如 fd(50)、color("red")）、python 语法。\n'
-    + '- 每条命令必须是上面列出的命令，禁止任何未列出的命令或拼音/自造词。\n'
-    + '- 可用 // 或行首 # 写注释（不影响执行），但不要用注释代替命令。\n'
-    + '\n'
-    + `${stepHint}`;
+    + stepHint;
   return [
     { role: 'system', content: systemContent },
-    { role: 'user', content: `画布宽 ${boardWidth}px、高 ${boardHeight}px。请用 turtle 脚本绘制：${instruction}` },
+    { role: 'user', content: `画布宽 ${w}px 高 ${h}px。请用 turtle 脚本绘制：${instruction}` },
   ];
 }
 

@@ -104,10 +104,12 @@ export async function queueConsumer(
   for (const msg of batch.messages) {
     try {
       await runAiJob(env, msg.body);
-      msg.ack();
     } catch (e) {
       console.error('AI job failed:', e instanceof Error ? e.message : e);
-      msg.retry();
+      // 失败/超时不再重试，直接消费丢弃（成功/失败均已广播 ai-log）
+      msg.ack();
+      continue;
     }
+    msg.ack();
   }
 }
