@@ -22,9 +22,12 @@ boardsApp.get('/:id/png', async (c) => {
   if (!state) throw new NotFoundError('board not found');
   const png = renderBoardToPng(state.elements, state.meta.width, state.meta.height);
   const buf = PNG.sync.write(png);
+  // 下载命名 cop-<时间戳>.png
+  const filename = `cop-${Date.now()}.png`;
   return c.body(new Uint8Array(buf), 200, {
     'Content-Type': 'image/png',
     'Cache-Control': 'no-store',
+    'Content-Disposition': `attachment; filename="${filename}"`,
   });
 });
 
