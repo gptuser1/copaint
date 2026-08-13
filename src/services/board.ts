@@ -9,9 +9,11 @@ export function getState(env: Env, boardId: string): Promise<BoardState | null> 
   return client.getState(env, boardId);
 }
 
-// 读取画板；不存在则创建（幂等）
-export function getOrCreate(env: Env, boardId: string): Promise<BoardState> {
-  return client.ensureState(env, boardId);
+// 读取画板；不存在则创建（可用 size 自定义尺寸，幂等）
+export function getOrCreate(
+  env: Env, boardId: string, size?: { width?: number; height?: number }
+): Promise<BoardState> {
+  return client.ensureState(env, boardId, size);
 }
 
 // 新增元素并广播

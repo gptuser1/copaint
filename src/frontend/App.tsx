@@ -12,6 +12,25 @@ const TOOLS: { id: ElementType; label: string }[] = [
   { id: 'eraser', label: '橡皮' },
 ];
 
+// 预设画板尺寸
+const PRESETS: { id: string; width: number; height: number }[] = [
+  { id: '默认', width: 960, height: 600 },
+  { id: '手机', width: 375, height: 667 },
+  { id: '平板', width: 768, height: 1024 },
+  { id: 'A4竖版', width: 595, height: 842 },
+  { id: 'A4横版', width: 842, height: 595 },
+];
+
+// AI 执行日志条目
+interface AiLog {
+  id: number;
+  time: string;
+  message: string;
+  mode: 'once' | 'multi';
+  step?: number;
+  totalSteps?: number;
+}
+
 export function App() {
   const [authed, setAuthed] = useState(false);
   const [elements, setElements] = useState<BoardElement[]>([]);
@@ -25,6 +44,31 @@ export function App() {
   const [error, setError] = useState('');
   const [showConfig, setShowConfig] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
+
+  // 画板信息 + 新建画板界面
+  const [board, setBoard] = useState({ id: 'default', width: 960, height: 600 });
+  const [showBoardForm, setShowBoardForm] = useState(false);
+  const [bId, setBId] = useState('');
+  const [bPreset, setBPreset] = useState('默认');
+  const [bCustom, setBCustom] = useState(false);
+  const [bWidth, setBWidth] = useState(0);
+  const [bHeight, setBHeight] = useState(0);
+
+  // AI 执行日志
+  const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
+  const logBoxRef = useRef<HTMLDivElement>(null);
+  const logSeq = useRef(0);
+
+  const addLog = useCallback((partial: Omit<AiLog, 'id' | 'time'>) => {
+    const t = new Date();
+    const time = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}`;
+    setAiLogs((prev) => [...prev, { id: ++logSeq.current, time, ...partial }].slice(-200));
+  }, []);
+
+  // 自动滚动到底部
+  useEffect(() => {
+    if (logBoxRef.current) logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
+  }, [aiLogs]);
 
   const elementsRef = useRef<BoardElement[]>([]);
   elementsRef.current = elements;
@@ -42,6 +86,9 @@ export function App() {
     const saved = api.loadSavedToken();
     if (!saved) { setAuthed(false); return; }
     setTokenInput(saved);
+    // 恢复上次画板（id + 尺寸）
+    const b = api.loadSavedBoard();
+    if (b) setBoard({ id: b.id, width: b.width, height: b.height });
     api.verifyToken().then(() => setAuthed(true)).catch(() => {
       api.saveToken('');
       setAuthed(false);
@@ -72,7 +119,11 @@ export function App() {
   useEffect(() => {
     if (!authed) return;
     let closed = false;
-    api.getBoard().then((s) => { if (!closed) setElements(s.elements); }).catch(() => {});
+    api.getBoard().then((s) => {
+      if (closed) return;
+      setElements(s.elements);
+      setBoard({ id: s.meta.id, width: s.meta.width, height: s.meta.height });
+    }).catch(() => {});
     let ws = api.connectWs(handleWs);
     let timer: any;
     const reconnect = () => {
@@ -80,13 +131,23 @@ export function App() {
     };
     function handleWs(msg: { event: string; payload: any }) {
       if (closed) return;
+      if (msg.event === 'ai-log') {
+        const p = msg.payload || {};
+        addLog({
+          message: p.message || 'AI 完成',
+          mode: p.mode || 'once',
+          step: p.step,
+          totalSteps: p.totalSteps,
+        });
+        return;
+      }
       setElements((prev) => applyWs(prev, msg));
     }
     ws.onclose = () => { if (!closed) reconnect(); };
     ws.onerror = () => { try { ws.close(); } catch {} };
     return () => { closed = true; clearTimeout(timer); try { ws.close(); } catch {} };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed]);
+  }, [authed, board.id]);
 
   const applyWs = (prev: BoardElement[], msg: { event: string; payload: any }): BoardElement[] => {
     switch (msg.event) {
@@ -158,6 +219,28 @@ export function App() {
     window.open(api.exportPngUrl(), '_blank');
   }, []);
 
+  // 新建 / 切换画板
+  const handleCreateBoard = useCallback(() => {
+    const id = (bId || bPreset).trim();
+    if (!id) { setError('请输入画板 ID'); return; }
+    let w = board.width, h = board.height;
+    if (bCustom) {
+      if (!(bWidth > 0 && bHeight > 0)) { setError('请输入有效的宽高'); return; }
+      w = Math.round(bWidth); h = Math.round(bHeight);
+    } else {
+      const p = PRESETS.find((x) => x.id === bPreset);
+      if (p) { w = p.width; h = p.height; }
+    }
+    setError('');
+    api.setBoard(id, w, h);
+    setBoard({ id, width: w, height: h });
+    setShowBoardForm(false);
+    setBId('');
+    setBCustom(false);
+    setElements([]);
+    setAiLogs([]);
+  }, [bId, bPreset, bCustom, bWidth, bHeight, board.width, board.height]);
+
   const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer' };
 
   // 未登录：令牌输入界面
@@ -199,9 +282,58 @@ export function App() {
         <input type="number" min={1} max={30} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} title="粗细" style={{ width: 56 }} />
         <button onClick={handleClear} style={{ ...btnStyle, border: '1px solid #999' }}>🗑 清空</button>
         <button onClick={handleExport} style={{ ...btnStyle, border: '1px solid #999' }}>⬇ 导出 PNG</button>
+        <button onClick={() => setShowBoardForm((s) => !s)} style={{ ...btnStyle, border: '1px solid #999' }}>🖼 画板</button>
         <button onClick={() => setShowConfig((s) => !s)} style={{ ...btnStyle, border: '1px solid #999' }}>⚙ 配置</button>
         <button onClick={handleLogout} style={{ ...btnStyle, border: '1px solid #999' }}>退出</button>
       </div>
+
+      {/* 当前画板信息 */}
+      <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+        当前画板：<b>{board.id}</b>（{board.width} × {board.height}）
+      </div>
+
+      {/* 新建 / 切换画板 */}
+      {showBoardForm && (
+        <div style={{ border: '1px solid #ddd', borderRadius: 6, padding: 12, marginBottom: 10, background: '#fff' }}>
+          <h3 style={{ marginTop: 0, marginBottom: 8 }}>新建 / 切换画板</h3>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <label style={{ fontWeight: 600 }}>画板 ID</label>
+            <input value={bId} onChange={(e) => setBId(e.target.value)} placeholder="自定义 id（留空用预设名）" style={{ padding: 6, flex: 1, minWidth: 180 }} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <label style={{ fontWeight: 600 }}>尺寸参考</label>
+            <span style={{ fontSize: 12, color: '#888' }}>
+              当前屏幕：{window.innerWidth} × {window.innerHeight}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            {PRESETS.map((p) => (
+              <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="preset"
+                  checked={!bCustom && bPreset === p.id}
+                  onChange={() => { setBPreset(p.id); setBCustom(false); }}
+                />
+                {p.id} {p.width}×{p.height}
+              </label>
+            ))}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+              <input type="radio" name="preset" checked={bCustom} onChange={() => setBCustom(true)} />
+              自定义
+            </label>
+          </div>
+          {bCustom && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+              <label>宽</label>
+              <input type="number" min={10} value={bWidth || ''} placeholder={String(window.innerWidth)} onChange={(e) => setBWidth(Number(e.target.value))} style={{ width: 90, padding: 6 }} />
+              <label>高</label>
+              <input type="number" min={10} value={bHeight || ''} placeholder={String(window.innerHeight)} onChange={(e) => setBHeight(Number(e.target.value))} style={{ width: 90, padding: 6 }} />
+            </div>
+          )}
+          <button onClick={handleCreateBoard} style={{ ...btnStyle, border: '1px solid #999', background: '#4a90d9', color: '#fff' }}>进入画板</button>
+        </div>
+      )}
 
       {error && <div style={{ color: '#e74c3c', marginBottom: 8 }}>{error}</div>}
 
@@ -216,8 +348,8 @@ export function App() {
         strokeWidth={strokeWidth}
         onCommit={handleCommit}
         onClear={handleClear}
-        width={960}
-        height={600}
+        width={board.width}
+        height={board.height}
       />
 
       {/* AI 指令 */}
@@ -242,6 +374,40 @@ export function App() {
         <button onClick={handleAi} disabled={aiBusy} style={{ ...btnStyle, border: '1px solid #999', background: aiBusy ? '#eee' : '#4caf50', color: aiBusy ? '#999' : '#fff' }}>
           {aiBusy ? '绘制中…' : '🤖 让 AI 画'}
         </button>
+        <button onClick={() => setAiLogs([])} style={{ ...btnStyle, border: '1px solid #999' }}>清空日志</button>
+      </div>
+
+      {/* AI 执行日志 */}
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🤖 AI 执行日志</div>
+        <div
+          ref={logBoxRef}
+          style={{
+            border: '1px solid #ddd',
+            borderRadius: 6,
+            background: '#0f1117',
+            color: '#d6d6d6',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 12,
+            lineHeight: 1.6,
+            padding: 8,
+            height: 150,
+            overflowY: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+          }}
+        >
+          {aiLogs.length === 0 && <div style={{ color: '#666' }}>暂无日志，提交 AI 指令后将在此显示执行结果。</div>}
+          {aiLogs.map((log) => (
+            <div key={log.id}>
+              <span style={{ color: '#888' }}>{log.time}</span>{' '}
+              <span style={{ color: log.mode === 'multi' ? '#7fd5ff' : '#7ee787' }}>
+                {log.mode === 'multi' && log.step != null ? `[步骤 ${log.step + 1}/${log.totalSteps}] ` : ''}
+              </span>
+              {log.message}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

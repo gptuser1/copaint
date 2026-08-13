@@ -1,5 +1,6 @@
-// Konva 画布：绘制工具交互
-import { useRef, useState } from 'react';
+// Konva 画布：绘制工具交互 + 移动端防误触 + 响应式缩放
+// 通过 CSS touch-action:none 阻止移动端触摸引发的滚动/下拉刷新手势
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Line, Rect, Ellipse } from 'react-konva';
 import type { BoardElement, ElementType } from '../domain/types';
 
@@ -29,9 +30,27 @@ interface Draft {
 export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width, height }: DrawCanvasProps) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const drawingRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerW, setContainerW] = useState(0);
 
-  const start = (e: any) => {
-    const pos = e.target.getStage().getPointerPosition();
+  // 监听容器宽度，实现响应式缩放（不超过原始尺寸）
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setContainerW(el.clientWidth || 0);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const scale = containerW > 0 ? Math.min(1, containerW / width) : 1;
+  const dispW = Math.round(width * scale);
+  const dispH = Math.round(height * scale);
+
+  const start = useCallback((e: any) => {
+    const stage = e.target.getStage();
+    const pos = stage.getPointerPosition();
     if (!pos) return;
     drawingRef.current = true;
     const d: Draft = {
@@ -41,9 +60,9 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
       x: pos.x, y: pos.y, width: 0, height: 0, x2: pos.x, y2: pos.y,
     };
     setDraft(d);
-  };
+  }, [tool]);
 
-  const move = (e: any) => {
+  const move = useCallback((e: any) => {
     if (!drawingRef.current || !draft) return;
     const pos = e.target.getStage().getPointerPosition();
     if (!pos) return;
@@ -56,9 +75,9 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
       const h = Math.abs(pos.y - draft.y);
       setDraft({ ...draft, x, y, width: w, height: h, x2: pos.x, y2: pos.y });
     }
-  };
+  }, [draft, tool]);
 
-  const end = () => {
+  const end = useCallback(() => {
     if (!drawingRef.current || !draft) return;
     drawingRef.current = false;
     const base = { color, strokeWidth, by: 'user' as const };
@@ -74,7 +93,7 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
       }
     }
     setDraft(null);
-  };
+  }, [draft, tool, color, strokeWidth, onCommit]);
 
   const renderElement = (el: BoardElement) => {
     const key = el.id;
@@ -94,10 +113,26 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
   };
 
   return (
-    <div style={{ border: '1px solid #ccc', display: 'inline-block' }}>
+    <div
+      ref={containerRef}
+      style={{
+        width: '100%',
+        maxWidth: dispW,
+        border: '1px solid #ccc',
+        background: '#fff',
+        overflow: 'hidden',
+        // 关键：阻止触摸滚动/双指缩放/下拉刷新，避免误触
+        touchAction: 'none',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+      } as React.CSSProperties}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <Stage
-        width={width}
-        height={height}
+        width={dispW}
+        height={dispH}
+        scaleX={scale}
+        scaleY={scale}
         onMouseDown={start}
         onMouseMove={move}
         onMouseUp={end}
@@ -108,10 +143,7 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
       >
         <Layer>
           {elements.map(renderElement)}
-          {draft && tool === 'pen' && draft.points.length >= 2 && (
-            <Line points={draft.points} stroke={color} strokeWidth={strokeWidth} lineCap="round" lineJoin="round" />
-          )}
-          {draft && tool === 'eraser' && draft.points.length >= 2 && (
+          {draft && (tool === 'pen' || tool === 'eraser') && draft.points.length >= 2 && (
             <Line points={draft.points} stroke={color} strokeWidth={strokeWidth} lineCap="round" lineJoin="round" />
           )}
           {draft && tool === 'rect' && (

@@ -49,7 +49,7 @@ export interface AiJob {
 }
 
 // WebSocket 广播事件类型
-export type WsEvent = 'add' | 'update' | 'delete' | 'clear' | 'ops';
+export type WsEvent = 'add' | 'update' | 'delete' | 'clear' | 'ops' | 'ai-log';
 
 // WebSocket 广播消息（前端使用）
 export interface WsMessage {

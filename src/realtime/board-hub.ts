@@ -13,16 +13,16 @@ interface ElementInput {
 }
 
 export class BoardHub extends DurableObject {
-  // 读取画板状态；不存在则创建默认画板（幂等）
-  async ensureState(): Promise<BoardState> {
+  // 读取画板状态；不存在则创建（可用 size 自定义尺寸，缺省用默认）
+  async ensureState(size?: { width?: number; height?: number }): Promise<BoardState> {
     const existing = await this.ctx.storage.get<BoardState>(STATE_KEY);
     if (existing) return existing;
     const now = Date.now();
     const state: BoardState = {
       meta: {
         id: this.ctx.id.name!,
-        width: BOARD_WIDTH,
-        height: BOARD_HEIGHT,
+        width: size?.width || BOARD_WIDTH,
+        height: size?.height || BOARD_HEIGHT,
         createdAt: now,
         updatedAt: now,
       },
@@ -69,9 +69,14 @@ export class BoardHub extends DurableObject {
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    // 读状态（不存在则创建）
+    // 读状态（不存在则创建，可带 ?width= & height= 自定义尺寸）
     if (req.method === 'GET' && path === '/state') {
-      return Response.json(await this.ensureState());
+      const w = Number(url.searchParams.get('width'));
+      const h = Number(url.searchParams.get('height'));
+      const size = (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0)
+        ? { width: Math.round(w), height: Math.round(h) }
+        : undefined;
+      return Response.json(await this.ensureState(size));
     }
 
     // 读状态（不存在返回 404）

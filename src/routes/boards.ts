@@ -7,9 +7,14 @@ import { NotFoundError, ValidationError } from '../domain/errors';
 
 export const boardsApp = new Hono<{ Bindings: Env }>();
 
-// 读取画板状态（不存在则创建）
+// 读取画板状态（不存在则创建，可带 ?width= & height= 自定义尺寸）
 boardsApp.get('/:id', async (c) => {
-  const state = await board.getOrCreate(c.env, c.req.param('id'));
+  const w = Number(c.req.query('width'));
+  const h = Number(c.req.query('height'));
+  const size = (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0)
+    ? { width: Math.round(w), height: Math.round(h) }
+    : undefined;
+  const state = await board.getOrCreate(c.env, c.req.param('id'), size);
   return c.json(state);
 });
 

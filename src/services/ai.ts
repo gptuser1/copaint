@@ -1,6 +1,6 @@
 // AI 用例层：执行 AI 绘制任务（单次 / 多步链式）+ Queues 消费入口
 // 读画板与写元素都走 BoardHub DO，配置走 Ocean
-import { getState, addElement } from '../realtime/board-client';
+import { getState, addElement, broadcast } from '../realtime/board-client';
 import { generateElements } from '../infrastructure/ai/client';
 import { requireConfig } from './config';
 import type { AiJob, BoardElement } from '../domain/types';
@@ -31,6 +31,20 @@ export async function runAiJob(env: Env, job: AiJob): Promise<void> {
       stepHint,
     },
   );
+
+  const stepLabel = job.mode === 'multi' ? `[步骤 ${job.stepIndex + 1}/${job.totalSteps}]` : '';
+  const logMsg = `${stepLabel} 指令: "${job.instruction}" → 生成了 ${partials.length} 个元素`;
+
+  // 广播 AI 日志
+  await broadcast(env, job.boardId, 'ai-log', {
+    step: job.stepIndex,
+    totalSteps: job.totalSteps,
+    mode: job.mode,
+    instruction: job.instruction,
+    elementCount: partials.length,
+    message: logMsg,
+  });
+
   if (partials.length === 0) return;
 
   // 写入元素（DO 内部会广播 'add'）
