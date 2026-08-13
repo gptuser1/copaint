@@ -1,0 +1,41 @@
+name = "copaint"
+main = "src/index.ts"
+compatibility_date = "2025-03-01"
+workers_dev = false
+
+[assets]
+directory = "./public"
+not_found_handling = "none"
+
+# ── Ocean (D1 REST) 访问凭据 ──
+# 由 wrangler secret 注入（本地开发放 .dev.vars）
+# COP_OCEAN_TOKEN: Ocean REST 访问 token（Cloudflare secret 绑定）
+# COP_OCEAN_BASE : Ocean REST 基地址
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+# ── AI 调度队列 ──
+[[queues.producers]]
+binding = "AI_QUEUE"
+queue = "copaint-ai-queue"
+
+[[queues.consumers]]
+queue = "copaint-ai-queue"
+max_batch_size = 1
+max_retries = 3
+dead_letter_queue = "copaint-dlq"
+
+[[queues.producers]]
+binding = "DLQ_PRODUCER"
+queue = "copaint-dlq"
+
+# ── WebSocket Durable Object ──
+[[durable_objects.bindings]]
+name = "BOARD_HUB"
+class_name = "BoardHub"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["BoardHub"]
