@@ -1,12 +1,12 @@
 // 纯领域类型：前后端共享，禁止依赖 worker / Hono
 
-export type ElementType = 'pen' | 'rect' | 'ellipse' | 'line' | 'eraser';
+export type ElementType = 'pen' | 'rect' | 'ellipse' | 'line' | 'eraser' | 'polygon';
 
 // 画板元素（统一结构，points 用于自由线，其他用 x/y/width/height）
 export interface BoardElement {
   id: string;
   type: ElementType;
-  // 自由路径点集（pen / eraser）
+  // 自由路径点集（pen / eraser / polygon）
   points?: number[];
   // pen 可变宽度：与 points 每个顶点对应的笔刷粗细（可选，缺省用 strokeWidth）
   widths?: number[];
@@ -20,6 +20,8 @@ export interface BoardElement {
   // 直线端点（line）
   x2?: number;
   y2?: number;
+  // 填充色（polygon 等封闭图形）
+  fill?: string;
   color: string;
   strokeWidth: number;
   // 创建者标识：用户 / AI / 外部 API

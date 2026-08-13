@@ -1,6 +1,7 @@
-// Turtle 解释器：把 turtle 脚本模拟成一条(或多条)连续手绘路径(pen)
-// 支持：fd/bk(前进后退), lt/rt(转向), pu/pd(抬笔落笔), color(换色),
-//       width(换粗细), goto(跳转), repeat(循环)。纯 JS，无依赖。
+// Turtle 解释器：把 turtle 脚本模拟成路径/填充图形
+// 支持：fd/bk(移动), lt/rt(转向), pu/pd(抬笔落笔), color(双色)/pencolor/fillcolor,
+//       width(粗细), goto/setx/sety/setheading/home(定位), circle(圆/弧), dot(点),
+//       begin_fill/end_fill(填充), repeat(循环)。纯 JS，无依赖。
 import type { BoardElement } from '../domain/types';
 
 // 一段连续的落笔笔画（pen 元素的数据来源）
@@ -9,6 +10,16 @@ export interface PenStroke {
   widths: number[];
   colors: string[];
 }
+
+// 一个封闭填充多边形（polygon 元素的数据来源）
+export interface FillShape {
+  points: number[];
+  fill: string;
+  color: string;
+  strokeWidth: number;
+}
+
+export type TurtleItem = PenStroke | FillShape;
 
 export interface TurtleOptions {
   startX: number;
@@ -27,7 +38,10 @@ const COLOR_NAMES: Record<string, string> = {
 const COMMANDS = new Set([
   'fd', 'forward', 'bk', 'back', 'lt', 'left', 'rt', 'right',
   'pu', 'penup', 'up', 'pd', 'pendown', 'down',
-  'color', 'width', 'pensize', 'goto', 'repeat',
+  'color', 'pencolor', 'fillcolor', 'width', 'pensize',
+  'goto', 'setpos', 'setx', 'sety', 'setheading', 'seth', 'home',
+  'circle', 'dot', 'begin_fill', 'bf', 'end_fill', 'ef',
+  'repeat', 'pos', 'heading', 'isdown',
 ]);
 
 function expandHex(h: string): string {
@@ -44,12 +58,11 @@ function parseColor(v: string): string {
 
 // 去掉 // 与 # 行注释，再按空白和花括号切词
 function tokenize(src: string): string[] {
-  const lines = src.split('\n');
-  const cleaned = lines
+  const cleaned = src
+    .split('\n')
     .map((l) => l.replace(/\/\/.*$/, '').replace(/#.*$/, ''))
     .join('\n');
-  const toks = cleaned.match(/[{}]|[^\s{}]+/g) || [];
-  return toks;
+  return cleaned.match(/[{}]|[^\s{}]+/g) || [];
 }
 
 interface Cmd {
@@ -58,7 +71,6 @@ interface Cmd {
   body?: Cmd[]; // repeat 子命令
 }
 
-// 递归解析成命令树（支持嵌套 repeat）
 function parse(tokens: string[]): Cmd[] {
   let i = 0;
   function walk(stopAtBrace: boolean): Cmd[] {
@@ -73,7 +85,6 @@ function parse(tokens: string[]): Cmd[] {
       if (tok === 'repeat') {
         const n = Number(tokens[i + 1]);
         i += 2;
-        // 可选的 '{'
         if (tokens[i] === '{') i++;
         const body = walk(true);
         cmds.push({ op: 'repeat', args: [String(Number.isFinite(n) ? n : 1)], body });
@@ -95,7 +106,7 @@ function parse(tokens: string[]): Cmd[] {
   return walk(false);
 }
 
-export function runTurtle(script: string, opts: TurtleOptions): PenStroke[] {
+export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   const startHeading = opts.startHeading ?? 0;
   const maxOps = opts.maxOps ?? 8000;
 
@@ -104,15 +115,20 @@ export function runTurtle(script: string, opts: TurtleOptions): PenStroke[] {
   let heading = startHeading;
   let penDown = false;
   let color = '#000000';
+  let fillColor = '#000000';
   let width = 3;
   let ops = 0;
 
   // 当前笔画（落笔连续段）
   let cur: PenStroke | null = null;
-  const strokes: PenStroke[] = [];
+  const items: TurtleItem[] = [];
+
+  // 填充状态
+  let filling = false;
+  let fillPoints: number[] = [];
 
   function flush() {
-    if (cur && cur.points.length >= 4) strokes.push(cur);
+    if (cur && cur.points.length >= 4) items.push(cur);
     cur = null;
   }
 
@@ -123,73 +139,183 @@ export function runTurtle(script: string, opts: TurtleOptions): PenStroke[] {
     cur.colors.push(color);
   }
 
+  function endFill() {
+    if (!filling) return;
+    filling = false;
+    if (fillPoints.length >= 6) {
+      const pts = fillPoints.slice();
+      // 闭合：若首尾不同，补回起点
+      if (pts[0] !== pts[pts.length - 2] || pts[1] !== pts[pts.length - 1]) {
+        pts.push(pts[0], pts[1]);
+      }
+      const shape: FillShape = {
+        points: pts,
+        fill: fillColor,
+        color,
+        strokeWidth: width,
+      };
+      items.push(shape);
+      // 轮廓描边（画在填充之上）
+      items.push({
+        points: pts,
+        widths: pts.map(() => width),
+        colors: pts.map(() => color),
+      });
+    }
+    fillPoints = [];
+  }
+
   function move(dist: number) {
     if (ops++ > maxOps) return;
     const rad = (heading * Math.PI) / 180;
     const nx = x + dist * Math.cos(rad);
     const ny = y + dist * Math.sin(rad);
     if (penDown) {
-      // 起笔：先落一个当前点，再落到目标点
-      if (!cur || cur.points.length === 0) vertex();
-      x = nx; y = ny;
-      vertex();
+      if (filling) {
+        if (fillPoints.length === 0) fillPoints.push(x, y);
+        x = nx; y = ny;
+        fillPoints.push(x, y);
+      } else {
+        if (!cur || cur.points.length === 0) vertex();
+        x = nx; y = ny;
+        vertex();
+      }
     } else {
       x = nx; y = ny;
     }
   }
 
+  function gotoAbs(gx: number, gy: number) {
+    if (!Number.isFinite(gx) || !Number.isFinite(gy)) return;
+    if (penDown) {
+      if (filling) {
+        if (fillPoints.length === 0) fillPoints.push(x, y);
+        x = gx; y = gy;
+        fillPoints.push(x, y);
+      } else {
+        if (!cur || cur.points.length === 0) vertex();
+        x = gx; y = gy;
+        vertex();
+      }
+    } else {
+      x = gx; y = gy;
+    }
+  }
+
+  function circleCmd(r: number, extent: number, steps?: number) {
+    if (!Number.isFinite(r) || r === 0) return;
+    if (!Number.isFinite(extent) || extent === 0) extent = 360;
+    const sgn = r >= 0 ? 1 : -1;
+    const n = steps && steps >= 3
+      ? Math.round(steps)
+      : Math.max(4, Math.round(Math.min(Math.abs(extent), 360) / 4));
+    const per = extent / n; // 每次小转角（带符号）
+    const stepLen = Math.abs(r) * (2 * Math.PI / 360) * Math.abs(per);
+    for (let k = 0; k < n && ops <= maxOps; k++) {
+      move(stepLen);
+      heading -= sgn * per; // r>0 向左(中心在左)，y 向下坐标系里左转即 heading 减小
+    }
+  }
+
+  function dotCmd(size: number, col?: string) {
+    const r = Math.max(0.5, size / 2);
+    const c = col ? parseColor(col) : color;
+    const n = 24;
+    const pts: number[] = [];
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      pts.push(Number((x + r * Math.cos(a)).toFixed(1)), Number((y + r * Math.sin(a)).toFixed(1)));
+    }
+    pts.push(pts[0], pts[1]);
+    items.push({ points: pts, fill: c, color: c, strokeWidth: 0 });
+  }
+
   function exec(cmds: Cmd[]) {
     for (const c of cmds) {
       if (ops > maxOps) break;
+      const a = c.args;
       switch (c.op) {
         case 'repeat': {
-          const n = Math.min(Number(c.args[0]) || 0, 1000);
+          const n = Math.min(Number(a[0]) || 0, 1000);
           for (let k = 0; k < n; k++) exec(c.body || []);
           break;
         }
-        case 'fd': case 'forward': move(Number(c.args[0]) || 0); break;
-        case 'bk': case 'back': move(-(Number(c.args[0]) || 0)); break;
-        case 'lt': case 'left': heading -= Number(c.args[0]) || 0; break;
-        case 'rt': case 'right': heading += Number(c.args[0]) || 0; break;
+        case 'fd': case 'forward': move(Number(a[0]) || 0); break;
+        case 'bk': case 'back': move(-(Number(a[0]) || 0)); break;
+        case 'lt': case 'left': heading -= Number(a[0]) || 0; break;
+        case 'rt': case 'right': heading += Number(a[0]) || 0; break;
         case 'pu': case 'penup': case 'up': flush(); penDown = false; break;
         case 'pd': case 'pendown': case 'down': penDown = true; break;
-        case 'color': if (c.args[0]) color = parseColor(c.args[0]); break;
+        case 'color': {
+          // color <pen> [fill]
+          if (a[0]) color = parseColor(a[0]);
+          if (a[1]) fillColor = parseColor(a[1]);
+          break;
+        }
+        case 'pencolor': if (a[0]) color = parseColor(a[0]); break;
+        case 'fillcolor': if (a[0]) fillColor = parseColor(a[0]); break;
         case 'width': case 'pensize': {
-          const w = Number(c.args[0]);
+          const w = Number(a[0]);
           if (Number.isFinite(w) && w > 0) width = w;
           break;
         }
-        case 'goto': {
-          const gx = Number(c.args[0]), gy = Number(c.args[1]);
-          if (Number.isFinite(gx) && Number.isFinite(gy)) {
-            if (penDown) {
-              if (!cur || cur.points.length === 0) vertex();
-              x = gx; y = gy;
-              vertex();
-            } else { x = gx; y = gy; }
-          }
+        case 'goto': case 'setpos': gotoAbs(Number(a[0]), Number(a[1])); break;
+        case 'setx': gotoAbs(Number(a[0]), y); break;
+        case 'sety': gotoAbs(x, Number(a[0])); break;
+        case 'setheading': case 'seth': {
+          const h = Number(a[0]);
+          if (Number.isFinite(h)) heading = h;
           break;
         }
-        default: break;
+        case 'home': {
+          // 回到起点朝东（与初始 heading 一致，简化为朝右）
+          flush();
+          gotoAbs(opts.startX, opts.startY);
+          heading = 0;
+          break;
+        }
+        case 'circle': circleCmd(Number(a[0]), Number(a[1]) || 360, a[2] !== undefined ? Number(a[2]) : undefined); break;
+        case 'dot': dotCmd(Number(a[0]) || 2, a[1]); break;
+        case 'begin_fill': case 'bf': endFill(); filling = true; fillPoints = []; break;
+        case 'end_fill': case 'ef': endFill(); break;
+        default: break; // pos/heading/isdown 查询类，本实现无需输出
       }
     }
   }
 
   exec(parse(tokenize(script)));
+  if (filling) endFill();
   flush();
-  return strokes;
+  return items;
 }
 
-// 把多段笔画转成多个 pen 元素（by='ai'）
-export function strokesToElements(strokes: PenStroke[], base: { id: string }): Partial<BoardElement>[] {
-  return strokes.map((s, i) => ({
-    type: 'pen' as const,
-    points: s.points,
-    widths: s.widths,
-    colors: s.colors,
-    color: s.colors[0] || '#000000',
-    strokeWidth: s.widths[0] || 3,
-    by: 'ai' as const,
-    id: `${base.id}_s${i}`,
-  }));
+// 把 turtle 输出转成元素（stroke→pen，fill→polygon）
+export function turtleToElements(items: TurtleItem[], base: { id: string }): Partial<BoardElement>[] {
+  const out: Partial<BoardElement>[] = [];
+  items.forEach((it, i) => {
+    if ('fill' in it && it.fill) {
+      out.push({
+        type: 'polygon',
+        points: it.points,
+        fill: it.fill,
+        color: it.color,
+        strokeWidth: it.strokeWidth || 0,
+        by: 'ai',
+        id: `${base.id}_f${i}`,
+      });
+    } else {
+      const s = it as PenStroke;
+      out.push({
+        type: 'pen',
+        points: s.points,
+        widths: s.widths,
+        colors: s.colors,
+        color: s.colors[0] || '#000000',
+        strokeWidth: s.widths[0] || 3,
+        by: 'ai',
+        id: `${base.id}_s${i}`,
+      });
+    }
+  });
+  return out;
 }

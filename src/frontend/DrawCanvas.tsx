@@ -109,6 +109,8 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
         return <Rect key={key} x={el.x} y={el.y} width={el.width} height={el.height} stroke={el.color} strokeWidth={el.strokeWidth} />;
       case 'ellipse':
         return <Ellipse key={key} x={(el.x || 0) + (el.width || 0) / 2} y={(el.y || 0) + (el.height || 0) / 2} radiusX={(el.width || 0) / 2} radiusY={(el.height || 0) / 2} stroke={el.color} strokeWidth={el.strokeWidth} />;
+      case 'polygon':
+        return <Line key={key} points={el.points || []} closed fill={el.fill} stroke={el.color} strokeWidth={el.strokeWidth || 0} lineJoin="round" />;
       default:
         return null;
     }

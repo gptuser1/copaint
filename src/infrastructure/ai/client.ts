@@ -1,7 +1,7 @@
 // LLM 客户端：把自然语言指令转成画板元素
 // 纯基础设施实现，配置由调用方（services/ai）传入，避免向上依赖
 import type { BoardElement, ElementType } from '../../domain/types';
-import { runTurtle, strokesToElements } from '../turtle';
+import { runTurtle, turtleToElements } from '../turtle';
 
 // AI 不生成橡皮（白色笔触），只生成真实内容元素
 const VALID_TYPES: ElementType[] = ['pen', 'rect', 'ellipse', 'line'];
@@ -178,10 +178,14 @@ export async function generateElements(
 // ── Turtle 模式：LLM 输出 turtle 脚本，模拟成手绘路径 ──
 
 const TURTLE_COMMANDS_HELP =
-  'fd <n> 前进 / bk <n> 后退 / lt <deg> 左转 / rt <deg> 右转\n'
-  + 'pu 抬笔 / pd 落笔 / color <颜色> / width <n> 粗细\n'
-  + 'goto <x> <y> / repeat <n> { ... } 循环\n'
-  + '坐标原点在左上角，y 向下为正；0 度朝右，90 度朝下。';
+  '移动: fd <n> 前进 / bk <n> 后退 / lt <deg> 左转 / rt <deg> 右转\n'
+  + '定位: goto <x> <y> / setx <x> / sety <y> / setheading <deg> / home\n'
+  + '画笔: pu 抬笔 / pd 落笔 / width <n> 粗细 / color <描边> <填充>\n'
+  + '      pencolor <色> / fillcolor <色>\n'
+  + '图形: circle <半径> [角度] [步数] 画圆/弧 / dot <直径> [色] 画点\n'
+  + '填充: begin_fill ... end_fill 在 begin/end 之间画的封闭图形用 fillcolor 填充\n'
+  + '循环: repeat <n> { ... }\n'
+  + '坐标原点在左上角，y 向下为正；0 度朝右，90 度朝下。颜色用名称或 #hex。';
 
 function buildTurtlePrompt(
   instruction: string,
@@ -240,10 +244,10 @@ export async function generateTurtleElements(
   const data: { choices?: Array<{ message?: { content?: string } }> } = await res.json();
   const script = extractTurtleScript(data?.choices?.[0]?.message?.content || '');
   if (!script.trim()) return [];
-  const strokes = runTurtle(script, {
+  const items = runTurtle(script, {
     startX: input.width / 2,
     startY: input.height / 2,
     startHeading: 0,
   });
-  return strokesToElements(strokes, { id: `ai_${Date.now().toString(36)}` });
+  return turtleToElements(items, { id: `ai_${Date.now().toString(36)}` });
 }

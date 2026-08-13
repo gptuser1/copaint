@@ -61,6 +61,32 @@ function drawEllipse(buf: Buffer, w: number, cx: number, cy: number, rx: number,
   }
 }
 
+// 扫描线多边形填充
+function fillPolygon(buf: Buffer, w: number, h: number, pts: number[], c: [number, number, number, number]) {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let i = 0; i < pts.length; i += 2) { xs.push(pts[i]); ys.push(pts[i + 1]); }
+  const ymin = Math.max(0, Math.ceil(Math.min(...ys)));
+  const ymax = Math.min(h - 1, Math.floor(Math.max(...ys)));
+  for (let y = ymin; y <= ymax; y++) {
+    const isect: number[] = [];
+    for (let i = 0; i < xs.length; i++) {
+      const j = (i + 1) % xs.length;
+      const y0 = ys[i], y1 = ys[j];
+      if ((y0 <= y && y1 > y) || (y1 <= y && y0 > y)) {
+        const t = (y - y0) / (y1 - y0);
+        isect.push(xs[i] + t * (xs[j] - xs[i]));
+      }
+    }
+    isect.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < isect.length; k += 2) {
+      const xa = Math.max(0, Math.ceil(isect[k]));
+      const xb = Math.min(w - 1, Math.floor(isect[k + 1]));
+      for (let x = xa; x <= xb; x++) setPx(buf, w, x, y, c);
+    }
+  }
+}
+
 export function renderBoardToPng(elements: BoardElement[], width: number, height: number): PNG {
   const png = new PNG({ width, height });
   const buf = png.data;
@@ -98,6 +124,18 @@ export function renderBoardToPng(elements: BoardElement[], width: number, height
       }
       case 'ellipse': {
         drawEllipse(buf, width, (el.x || 0) + (el.width || 0) / 2, (el.y || 0) + (el.height || 0) / 2, (el.width || 0) / 2, (el.height || 0) / 2, color, sw);
+        break;
+      }
+      case 'polygon': {
+        const pts = el.points || [];
+        if (el.fill) fillPolygon(buf, width, height, pts, hexToRgba(el.fill, 1));
+        const psw = el.strokeWidth || 0;
+        if (psw > 0 && pts.length >= 4) {
+          for (let i = 2; i + 1 < pts.length; i += 2) {
+            drawLine(buf, width, pts[i - 2], pts[i - 1], pts[i], pts[i + 1], color, psw);
+          }
+          drawLine(buf, width, pts[pts.length - 2], pts[pts.length - 1], pts[0], pts[1], color, psw);
+        }
         break;
       }
     }
