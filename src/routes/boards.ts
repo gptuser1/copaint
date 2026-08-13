@@ -3,7 +3,9 @@ import { Hono } from 'hono';
 import { PNG } from 'pngjs';
 import * as board from '../services/board';
 import { renderBoardToPng } from '../infrastructure/render/png';
+import { runTurtle, turtleToElements } from '../infrastructure/turtle';
 import { NotFoundError, ValidationError } from '../domain/errors';
+import type { BoardElement } from '../domain/types';
 
 export const boardsApp = new Hono<{ Bindings: Env }>();
 
@@ -73,4 +75,25 @@ boardsApp.post('/:id/ops', async (c) => {
   if (!Array.isArray(ops)) throw new ValidationError('ops must be an array');
   const added = await board.batchOps(c.env, id, ops);
   return c.json({ ok: true, added });
+});
+
+// 直接执行 turtle 脚本（agent 自己把自然语言翻译成脚本后提交，不经内置 LLM）
+boardsApp.post('/:id/turtle', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const script = (body.script || '').trim();
+  if (!script) throw new ValidationError('script required');
+  const state = await board.getState(c.env, id);
+  if (!state) throw new NotFoundError('board not found');
+  const items = runTurtle(script, {
+    startX: state.meta.width / 2,
+    startY: state.meta.height / 2,
+    startHeading: 0,
+  });
+  const partials = turtleToElements(items, { id: `turtle_${Date.now().toString(36)}` });
+  const added: BoardElement[] = [];
+  for (const p of partials) {
+    added.push(await board.createElement(c.env, id, p as Omit<BoardElement, 'createdAt' | 'id'> & { id?: string }));
+  }
+  return c.json({ ok: true, added: added.length });
 });
