@@ -68,22 +68,17 @@ function summarizeElements(elements: BoardElement[], width: number, height: numb
   return `existing (${lines.length} 个):\n${lines.join('\n')}`;
 }
 
-export function buildTurtlePrompt(
-  instruction: string,
-  boardWidth: number,
-  boardHeight: number,
-  stepHint: string,
-  existing: BoardElement[],
-): Array<{ role: 'system' | 'user'; content: string }> {
+// 固定提示词（system）：字节级稳定，作为前缀命中 prompt 缓存。
+// 动态内容（existing 摘要、stepHint）必须追加在 user 末尾，不能插进这里。
+function buildFixedSystem(boardWidth: number, boardHeight: number): string {
   const w = Math.round(boardWidth);
   const h = Math.round(boardHeight);
-  const systemContent =
+  return (
     'role: 自定义 turtle-like 绘图脚本解释器（非 Python turtle），按下方定义把自然语言翻译成脚本\n'
     + 'canvas:\n'
     + `  size: 宽 ${w}px 高 ${h}px，中心为原点，四周约 ±${Math.round(w / 2)}, ±${Math.round(h / 2)}\n`
     + '  axes: +x 右 / +y 向上\n'
     + '  heading: 0°右 90°上 180°左 270°下；lt 逆时针(+)，rt 顺时针(-)\n'
-    + summarizeElements(existing, boardWidth, boardHeight) + '\n'
     + 'initial: 原点朝右，抬笔(先 pd 才画线)，黑 #000000，线宽 3\n'
     + 'commands:\n'
     + '  移动: fd <n> / bk <n>\n'
@@ -101,12 +96,25 @@ export function buildTurtlePrompt(
     + '  只输出脚本，无解释/前言/JSON/markdown 围栏\n'
     + '  一行一条命令，参数空格分隔，数字裸写\n'
     + '  禁止变量/等号/数学表达式/函数写法(如 fd(50))/括号/引号\n'
-    + '  只允许上述命令，禁止自创\n'
-    + '\n'
-    + stepHint;
+    + '  只允许上述命令，禁止自创'
+  );
+}
+
+export function buildTurtlePrompt(
+  instruction: string,
+  boardWidth: number,
+  boardHeight: number,
+  stepHint: string,
+  existing: BoardElement[],
+): Array<{ role: 'system' | 'user'; content: string }> {
+  const w = Math.round(boardWidth);
+  const h = Math.round(boardHeight);
+  // 动态内容全部追加在 user 末尾，保持 system 与 user 前缀稳定，
+  // 使同一画布/同一分步任务的后续请求可命中 prompt 缓存，降低调用成本
+  const dynamic = `${summarizeElements(existing, boardWidth, boardHeight)}\n${stepHint}`;
   return [
-    { role: 'system', content: systemContent },
-    { role: 'user', content: `画布宽 ${w}px 高 ${h}px。请用 turtle 脚本绘制：${instruction}` },
+    { role: 'system', content: buildFixedSystem(boardWidth, boardHeight) },
+    { role: 'user', content: `画布宽 ${w}px 高 ${h}px。请用 turtle 脚本绘制：${instruction}\n${dynamic}` },
   ];
 }
 
