@@ -346,4 +346,24 @@ describe('turtle', () => {
     );
     expect(items.length).toBe(1);
   });
+
+  // ── 回归：变量在形状/循环中的表现 ──
+  it('circle accepts variable radius', () => {
+    expect(runTurtle('r=25; pd circle r', { startX: 0, startY: 0 }).length).toBeGreaterThan(0);
+  });
+  it('circle accepts literal arithmetic expression', () => {
+    expect(runTurtle('pd circle 20 + 5', { startX: 0, startY: 0 }).length).toBeGreaterThan(0);
+  });
+  it('rect accepts variable dimensions', () => {
+    expect(runTurtle('r=25; pd rect r, r', { startX: 0, startY: 0 }).length).toBeGreaterThan(0);
+  });
+  it('ellipse accepts variable radii', () => {
+    expect(runTurtle('rx=30; ry=20; pd ellipse rx, ry', { startX: 0, startY: 0 }).length).toBeGreaterThan(0);
+  });
+  it('line accepts variable coordinates', () => {
+    expect(runTurtle('x1=-110; y1=-100; x2=110; y2=-100; pd line x1, y1, x2, y2', { startX: 0, startY: 0 }).length).toBeGreaterThan(0);
+  });
+  it('repeat count accepts variable', () => {
+    expect(runTurtle('n=3; pd repeat n { dot 10, blue }', { startX: 0, startY: 0 }).length).toBe(3);
+  });
 });
