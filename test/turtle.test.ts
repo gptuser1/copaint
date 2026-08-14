@@ -54,6 +54,25 @@ describe('turtle', () => {
     expect(Math.abs(p[1] - p[p.length - 1])).toBeLessThan(5);
   });
 
+  it('circle arc direction matches standard turtle', () => {
+    // 标准 turtle：圆心在起点左侧（r>0），右转=顺时针。circle 50,90 终点应在起点左50上50。
+    // 逻辑(-50,50) → 屏幕(150,100)
+    const a = runTurtle(`pd circle 50, 90`, { startX: 200, startY: 150 });
+    const ap = a[0].points;
+    expect(Math.round(ap[ap.length - 2])).toBe(150);
+    expect(Math.round(ap[ap.length - 1])).toBe(100);
+    // circle 50,-180 顺时针半圆：终点在起点左100，逻辑(-100,0) → 屏幕(100,150)
+    const b = runTurtle(`pd circle 50, -180`, { startX: 200, startY: 150 });
+    const bp = b[0].points;
+    expect(Math.round(bp[bp.length - 2])).toBe(100);
+    expect(Math.round(bp[bp.length - 1])).toBe(150);
+    // circle -50,90 圆心在右侧：终点逻辑(50,50) → 屏幕(250,100)
+    const c = runTurtle(`pd circle -50, 90`, { startX: 200, startY: 150 });
+    const cp = c[0].points;
+    expect(Math.round(cp[cp.length - 2])).toBe(250);
+    expect(Math.round(cp[cp.length - 1])).toBe(100);
+  });
+
   it('dot emits a filled shape', () => {
     const items = runTurtle(`dot 20, red`, { startX: 100, startY: 100 });
     const d = items[0];
@@ -296,6 +315,14 @@ describe('turtle', () => {
     const p = items[0].points;
     expect(Math.round(p[0])).toBe(Math.round(p[p.length - 2]));
     expect(Math.round(p[1])).toBe(Math.round(p[p.length - 1]));
+  });
+
+  it('supports naked function-name calls (no parentheses)', () => {
+    // 裸调用 `seg` 之前曾因未知命令被静默忽略，导致 added:0
+    const items = runTurtle(`pd\nto seg { fd 20 }\nseg`, { startX: 0, startY: 0 });
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    expect(Math.round(p[p.length - 2])).toBe(20);
   });
 
   it('supports custom functions that return a value', () => {

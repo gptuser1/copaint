@@ -492,16 +492,25 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   function circleCmd(r: number, extent: number, steps?: number) {
     if (!Number.isFinite(r) || r === 0) return;
     if (!Number.isFinite(extent) || extent === 0) extent = 360;
-    const sgn = r >= 0 ? 1 : -1;
+    const wasDown = penDown;
+    flush();
+    // 标准 turtle：圆心在 turtle 左侧（r>0）或右侧（r<0），距当前点 |r|。
+    // 有理坐标 y 向上，故 cx = x - r；起点在当前点（位于圆心正右/正左，θ=0 或 π）。
+    const cx = x - r;
+    const cy = y;
+    const startAng = r > 0 ? 0 : Math.PI;
     const n = steps && steps >= 3
       ? Math.round(steps)
       : Math.max(4, Math.round(Math.min(Math.abs(extent), 360) / 4));
-    const per = extent / n; // 每次小转角（带符号）
-    const stepLen = Math.abs(r) * (2 * Math.PI / 360) * Math.abs(per);
-    for (let k = 0; k < n && ops <= maxOps; k++) {
-      move(stepLen);
-      heading += sgn * per; // r>0 向左(逆时针)，标准 turtle y 向上时 heading 增大
+    const per = (extent * Math.PI) / (180 * n); // 每步角度（带符号，弧度）
+    penDown = true;
+    for (let k = 1; k <= n && ops <= maxOps; k++) {
+      const a = startAng + per * k;
+      gotoAbs(cx + r * Math.cos(a), cy + r * Math.sin(a));
     }
+    // 圆/弧累计转动 extent 度（extent 正=逆时针，负=顺时针）
+    heading += extent;
+    if (!wasDown) { flush(); penDown = false; }
   }
 
   function dotCmd(size: number, col?: string) {
@@ -771,7 +780,12 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
         items.push({ type: 'clear' });
         break;
       }
-      default: break; // pos/heading/isdown 查询类，本实现无需输出
+      default: {
+        // 裸函数名调用（无括号，如 `drawFlower`）：尝试执行已定义的自定义函数。
+        // 否则视为 pos/heading/isdown 查询类，本实现无需输出。
+        if (funcs[name]) callValue(name, a);
+        break;
+      }
     }
   }
 
