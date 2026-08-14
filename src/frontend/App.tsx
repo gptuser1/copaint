@@ -306,13 +306,13 @@ export function App() {
     setAiBusy(true);
     try {
       const res = await api.runTurtle(script);
-      addLog({ message: `▶ 已执行测试脚本 → 生成 ${res.added} 个元素`, success: true });
+      addLog({ message: `▶ 已执行脚本 → 生成 ${res.added} 个元素`, success: true });
       const s = await api.getBoard();
       setElements(s.elements);
-      setTestScript('');
+      // 执行完不清空脚本，方便迭代调试
     } catch (e) {
       const msg = String((e as Error).message || e);
-      addLog({ message: `▶ 执行测试脚本失败: ${msg}`, success: false, error: msg });
+      addLog({ message: `▶ 执行脚本失败: ${msg}`, success: false, error: msg });
     } finally {
       setAiBusy(false);
     }
@@ -437,36 +437,41 @@ export function App() {
         </label>
       </div>
 
-      {/* 测试结果：预览 AI 生成的 turtle 脚本，可选择执行到画布 */}
-      {testScript.trim() !== '' && (
-        <div style={{ marginTop: 12, border: '1px solid #4c1d95', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span>🔬 测试脚本（预览）</span>
-            <button onClick={handleApplyTest} disabled={aiBusy} style={{ ...btnStyle, background: '#4c1d95', color: '#e9d5ff' }}>
-              {aiBusy ? '执行中…' : '▶ 执行到画布'}
-            </button>
-            <button onClick={() => setTestScript('')} style={btnStyle}>清空</button>
-          </div>
-          <pre
-            style={{
-              margin: 0,
-              maxHeight: 180,
-              overflow: 'auto',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-              fontSize: 12,
-              lineHeight: 1.5,
-              background: '#0f1117',
-              color: '#d6d6d6',
-              borderRadius: 4,
-              padding: 8,
-            }}
-          >
-            {testScript}
-          </pre>
+      {/* turtle 脚本输入/预览：可粘贴或编辑脚本，选择执行到画布；测试 AI 的结果也会填入此处 */}
+      <div style={{ marginTop: 12, border: '1px solid #4c1d95', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span>🐢 turtle 脚本</span>
+          <button onClick={handleApplyTest} disabled={aiBusy} style={{ ...btnStyle, background: '#4c1d95', color: '#e9d5ff' }}>
+            {aiBusy ? '执行中…' : '▶ 执行到画布'}
+          </button>
+          <button onClick={() => setTestScript('')} style={btnStyle}>清空</button>
         </div>
-      )}
+        <textarea
+          value={testScript}
+          onChange={(e) => setTestScript(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleApplyTest();
+          }}
+          placeholder={'在此输入 turtle 脚本，或先点「🔬 测试 AI」自动填入后再手动微调。\n例如：\npd\ncircle 50\nfd 100\nrt 120'}
+          spellCheck={false}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            maxHeight: 220,
+            minHeight: 90,
+            resize: 'vertical',
+            whiteSpace: 'pre',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 12,
+            lineHeight: 1.5,
+            background: '#0f1117',
+            color: '#d6d6d6',
+            borderRadius: 4,
+            padding: 8,
+            border: '1px solid var(--border)',
+          }}
+        />
+      </div>
 
       {/* AI 执行日志 */}
       <div style={{ marginTop: 12 }}>
