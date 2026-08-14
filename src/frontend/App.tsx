@@ -78,6 +78,8 @@ export function App() {
   const [color, setColor] = useState('#000000');
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [instruction, setInstruction] = useState('');
+  // 最近一次"测试 AI"返回的 turtle 脚本，可预览并选择执行到画布
+  const [testScript, setTestScript] = useState('');
   // LLM 可调参数（字符串态，允许输入框删到空，提交时再解析成数字）
   const [temperature, setTemperature] = useState('0.7');
   const [maxTokens, setMaxTokens] = useState('2048');
@@ -274,7 +276,7 @@ export function App() {
     }
   }, []);
 
-  // 测试 AI：直接请求不入队，把原始响应显示到日志区
+  // 测试 AI：直接请求不入队，把返回的 turtle 脚本保存，可在下方预览并选择执行到画布
   const handleTestAi = useCallback(async () => {
     const instr = instruction.trim();
     if (!instr) return;
@@ -286,7 +288,8 @@ export function App() {
         maxTokens: parseNum(maxTokens, 2048),
         thinking,
       });
-      addLog({ message: `🔬 测试响应: ${res.raw}`, success: true });
+      setTestScript(res.script);
+      addLog({ message: res.script ? `🔬 测试完成，脚本已就绪，可点击「执行到画布」` : '🔬 测试完成，但未返回有效脚本', success: true });
     } catch (e) {
       const msg = String((e as Error).message || e);
       addLog({ message: `🔬 测试失败: ${msg}`, success: false, error: msg });
@@ -294,6 +297,26 @@ export function App() {
       setAiBusy(false);
     }
   }, [instruction, addLog, temperature, maxTokens, thinking]);
+
+  // 执行测试生成的脚本到画布（与"让 AI 画"同样走 /turtle 落笔）
+  const handleApplyTest = useCallback(async () => {
+    const script = testScript.trim();
+    if (!script) return;
+    setError('');
+    setAiBusy(true);
+    try {
+      const res = await api.runTurtle(script);
+      addLog({ message: `▶ 已执行测试脚本 → 生成 ${res.added} 个元素`, success: true });
+      const s = await api.getBoard();
+      setElements(s.elements);
+      setTestScript('');
+    } catch (e) {
+      const msg = String((e as Error).message || e);
+      addLog({ message: `▶ 执行测试脚本失败: ${msg}`, success: false, error: msg });
+    } finally {
+      setAiBusy(false);
+    }
+  }, [testScript, addLog]);
 
   // 终止当前队列所有 AI 任务
   const handleCancelAi = useCallback(async () => {
@@ -413,6 +436,37 @@ export function App() {
           深度思考
         </label>
       </div>
+
+      {/* 测试结果：预览 AI 生成的 turtle 脚本，可选择执行到画布 */}
+      {testScript.trim() !== '' && (
+        <div style={{ marginTop: 12, border: '1px solid #4c1d95', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>🔬 测试脚本（预览）</span>
+            <button onClick={handleApplyTest} disabled={aiBusy} style={{ ...btnStyle, background: '#4c1d95', color: '#e9d5ff' }}>
+              {aiBusy ? '执行中…' : '▶ 执行到画布'}
+            </button>
+            <button onClick={() => setTestScript('')} style={btnStyle}>清空</button>
+          </div>
+          <pre
+            style={{
+              margin: 0,
+              maxHeight: 180,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: 12,
+              lineHeight: 1.5,
+              background: '#0f1117',
+              color: '#d6d6d6',
+              borderRadius: 4,
+              padding: 8,
+            }}
+          >
+            {testScript}
+          </pre>
+        </div>
+      )}
 
       {/* AI 执行日志 */}
       <div style={{ marginTop: 12 }}>

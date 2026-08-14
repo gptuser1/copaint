@@ -55,7 +55,8 @@ aiApp.post('/:id/ai/test', async (c) => {
       requireConfig(c.env, 'openai_model'),
     ]);
 
-    const raw = await generateTurtleScript(
+    // 返回解析后的 turtle 脚本（已剥离 <script> 标签），前端可预览并可执行到画布
+    const script = await generateTurtleScript(
       { apiKey, baseUrl, model },
       {
         instruction,
@@ -71,7 +72,7 @@ aiApp.post('/:id/ai/test', async (c) => {
       },
     );
 
-    return c.json({ ok: true, raw });
+    return c.json({ ok: true, script });
   } catch (e) {
     // 保留服务端日志便于排查
     console.error('ai test failed:', e);

@@ -86,8 +86,8 @@ export function runAi(instruction: string, params?: AiParams): Promise<{ ok: boo
   });
 }
 
-// 直接测试：不入队，返回 LLM 原始响应
-export function testAi(instruction: string, params?: AiParams): Promise<{ ok: boolean; raw: string }> {
+// 直接测试：不入队，返回解析后的 turtle 脚本（可预览并可执行到画布）
+export function testAi(instruction: string, params?: AiParams): Promise<{ ok: boolean; script: string }> {
   return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai/test`, {
     method: 'POST',
     body: JSON.stringify({ instruction, ...params }),
