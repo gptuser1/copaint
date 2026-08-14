@@ -102,19 +102,20 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
               strokeWidth={widths[idx] ?? el.strokeWidth}
               lineCap="round"
               lineJoin="round"
+              preventDefault={!readOnly}
             />,
           );
         }
         return <>{segs}</>;
       }
       case 'line':
-        return <Line key={key} points={[el.x || 0, el.y || 0, el.x2 || 0, el.y2 || 0]} stroke={el.color} strokeWidth={el.strokeWidth} lineCap="round" />;
+        return <Line key={key} points={[el.x || 0, el.y || 0, el.x2 || 0, el.y2 || 0]} stroke={el.color} strokeWidth={el.strokeWidth} lineCap="round" preventDefault={!readOnly} />;
       case 'rect':
-        return <Rect key={key} x={el.x} y={el.y} width={el.width} height={el.height} stroke={el.color} strokeWidth={el.strokeWidth} />;
+        return <Rect key={key} x={el.x} y={el.y} width={el.width} height={el.height} stroke={el.color} strokeWidth={el.strokeWidth} preventDefault={!readOnly} />;
       case 'ellipse':
-        return <Ellipse key={key} x={(el.x || 0) + (el.width || 0) / 2} y={(el.y || 0) + (el.height || 0) / 2} radiusX={(el.width || 0) / 2} radiusY={(el.height || 0) / 2} stroke={el.color} strokeWidth={el.strokeWidth} />;
+        return <Ellipse key={key} x={(el.x || 0) + (el.width || 0) / 2} y={(el.y || 0) + (el.height || 0) / 2} radiusX={(el.width || 0) / 2} radiusY={(el.height || 0) / 2} stroke={el.color} strokeWidth={el.strokeWidth} preventDefault={!readOnly} />;
       case 'polygon':
-        return <Line key={key} points={el.points || []} closed fill={el.fill} stroke={el.color} strokeWidth={el.strokeWidth || 0} lineJoin="round" />;
+        return <Line key={key} points={el.points || []} closed fill={el.fill} stroke={el.color} strokeWidth={el.strokeWidth || 0} lineJoin="round" preventDefault={!readOnly} />;
       default:
         return null;
     }
@@ -154,19 +155,19 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
       >
         <Layer>
           {/* 画板底：暗色深灰，亮色白 */}
-          <Rect x={0} y={0} width={width} height={height} fill={BOARD_BG[theme]} />
+          <Rect x={0} y={0} width={width} height={height} fill={BOARD_BG[theme]} preventDefault={!readOnly} />
           {elements.map(renderElement)}
           {draft && tool === 'pen' && draft.points.length >= 2 && (
-            <Line points={draft.points} stroke={color} strokeWidth={strokeWidth} lineCap="round" lineJoin="round" />
+            <Line points={draft.points} stroke={color} strokeWidth={strokeWidth} lineCap="round" lineJoin="round" preventDefault={!readOnly} />
           )}
           {draft && tool === 'rect' && (
-            <Rect x={draft.x} y={draft.y} width={draft.width} height={draft.height} stroke={color} strokeWidth={strokeWidth} />
+            <Rect x={draft.x} y={draft.y} width={draft.width} height={draft.height} stroke={color} strokeWidth={strokeWidth} preventDefault={!readOnly} />
           )}
           {draft && tool === 'ellipse' && (
-            <Ellipse x={draft.x + draft.width / 2} y={draft.y + draft.height / 2} radiusX={draft.width / 2} radiusY={draft.height / 2} stroke={color} strokeWidth={strokeWidth} />
+            <Ellipse x={draft.x + draft.width / 2} y={draft.y + draft.height / 2} radiusX={draft.width / 2} radiusY={draft.height / 2} stroke={color} strokeWidth={strokeWidth} preventDefault={!readOnly} />
           )}
           {draft && tool === 'line' && (
-            <Line points={[draft.x, draft.y, draft.x2, draft.y2]} stroke={color} strokeWidth={strokeWidth} lineCap="round" />
+            <Line points={[draft.x, draft.y, draft.x2, draft.y2]} stroke={color} strokeWidth={strokeWidth} lineCap="round" preventDefault={!readOnly} />
           )}
         </Layer>
       </Stage>
