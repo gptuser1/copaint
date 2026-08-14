@@ -40,6 +40,18 @@ describe('ai turtle prompt', () => {
     }
   });
 
+  it('does NOT expose complex syntax to the built-in AI', () => {
+    // 克制版：只暴露基础命令 + repeat，绝不教内置 AI 使用变量/表达式/条件/函数，
+    // 否则生成的脚本会失控（画小屋乱飞）。这些词一旦出现在提示词里即回归。
+    for (const banned of ['x = ', 'while', 'for (', 'to name', 'sqrt',
+      'sin(', 'cos(', 'random(', 'if <条件>', '数学函数', '自定义函数']) {
+      expect(sys).not.toContain(banned);
+    }
+    // 明确禁止，AI 才知道不能用
+    expect(sys).toContain('禁止');
+    expect(sys).toContain('变量');
+  });
+
   it('includes existing elements summary at the end of user message', () => {
     const existing: BoardElement[] = [
       { id: '1', type: 'rect', x: 100, y: 100, width: 200, height: 150, color: '#e74c3c', strokeWidth: 3, by: 'ai', createdAt: 1 },

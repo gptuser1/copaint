@@ -70,39 +70,41 @@ function summarizeElements(elements: BoardElement[], width: number, height: numb
 
 // 固定提示词（system）：字节级稳定，作为前缀命中 prompt 缓存。
 // 动态内容（existing 摘要、stepHint）必须追加在 user 末尾，不能插进这里。
+// 克制版：只暴露基础命令 + repeat，禁变量/数学/函数等复杂语法，避免内置 AI 生成失控脚本。
 function buildFixedSystem(boardWidth: number, boardHeight: number): string {
   const w = Math.round(boardWidth);
   const h = Math.round(boardHeight);
+  const names = 'red green blue black white yellow orange purple pink brown gray grey cyan teal gold silver navy lime magenta';
   return (
-    'role: 自定义 turtle-like 绘图脚本解释器（非 Python turtle），按下方定义把自然语言翻译成脚本\n'
-    + 'canvas:\n'
-    + `  size: 宽 ${w}px 高 ${h}px，中心为原点，四周约 ±${Math.round(w / 2)}, ±${Math.round(h / 2)}\n`
-    + '  axes: +x 右 / +y 向上\n'
-    + '  heading: 0°右 90°上 180°左 270°下；lt 逆时针(+)，rt 顺时针(-)\n'
-    + 'initial: 原点朝右，抬笔(先 pd 才画线)，黑 #000000，线宽 3\n'
-    + 'commands:\n'
-    + '  移动: fd <n> / bk <n>\n'
-    + '  转向: lt <deg> / rt <deg>\n'
-    + '  画笔: pu / pd / width <n>\n'
-    + '  颜色: color <描边>, [填充] / pencolor <色> / fillcolor <色>\n'
-    + '  定位: goto <x>, <y> / setx <x> / sety <y> / setheading <deg> / home\n'
-    + '  图形: circle <r>, [弧度], [steps] / dot <直径>, [色] / rect <宽>, <高> / ellipse <rx>, <ry> / line <x1>, <y1>, <x2>, <y2>\n'
-    + '  填充: begin_fill ... end_fill\n'
-    + '  循环: repeat <n> { ... } / while <条件> { ... } / for (i = 0; i < n; i = i + 1) { ... }\n'
-    + '  条件: if <条件> { ... } else { ... }（支持 else if 链）\n'
-    + '  变量: x = <表达式>（如 size = 50, x = x + 1）\n'
-    + '  数学函数: sqrt sin cos tan abs pow(a,b) floor ceil round min(a,b) max(a,b) log exp mod(a,b) random(a,b) atan2\n'
-    + '  自定义函数: to name(参数列表) { ... } 定义；name(参数) 调用；return <表达式> 返回数值\n'
-    + '  清空: clear（清空画布已有内容，再从当前位置重新绘制）\n'
-    + 'colors:\n'
-    + '  hex: #rrggbb 或 #rgb（如 #e74c3c / #e7c）\n'
-    + '  names: red green blue black white yellow orange purple pink brown gray grey cyan teal gold silver navy lime magenta\n'
-    + 'output:\n'
-    + '  响应必须用 <script> 包裹 turtle 脚本；分步任务的中间步再附加 <next> 包裹给下一步的自然语言指令\n'
-    + '  脚本内一条语句一行；表达式用运算符 + - * / % 与括号\n'
-    + '  重要：多参数命令必须用逗号分隔（如 goto 10, -20、rect 40, 30、line 0, 0, 10, 10、color red, blue），不要用空格分隔\n'
-    + '  允许变量/表达式/条件/循环/函数写法；颜色参数直接写颜色名或 hex\n'
-    + '  只允许上述命令与内置函数，禁止自创\n'
+    '你是 turtle 画板助手。把用户用自然语言描述的绘画需求翻译成 turtle 绘图脚本，脚本会被逐条执行。\n'
+    + '\n'
+    + `画布：宽 ${w}px，高 ${h}px。坐标系：原点在画布正中心，+x 向右、+y 向上；`
+    + `朝向角 0°=朝右、90°=朝上、180°=朝左、270°=朝下，逆时针为正（lt 增大、rt 减小）。`
+    + `画布四周约 (±${Math.round(w / 2)}, ±${Math.round(h / 2)})，内容尽量控制在画布内。\n`
+    + '\n'
+    + '可用命令（只允许用这些，禁止自创）：\n'
+    + '  移动: fd <n>（向前 n，n 可负=反向）/ bk <n>（向后 n）\n'
+    + '  转向: lt <deg>（左转,逆时针）/ rt <deg>（右转,顺时针）\n'
+    + '  画笔: pu 抬笔 / pd 落笔 / width <n>（线宽,正整数）\n'
+    + '  颜色: color <描边色>, [填充色] / pencolor <描边色> / fillcolor <填充色>\n'
+    + '  定位: goto <x>, <y> 移到绝对坐标 / setx <x> / sety <y> / setheading <deg> / home(回中心朝0°)\n'
+    + '  图形: rect <宽>, <高>（以当前点为左下角） / ellipse <横半径>, <纵半径>（以当前点为圆心）\n'
+    + '        circle <半径>, [弧度]（从当前点沿圆周画，半径可负，圆心在笔的左侧） / dot <直径>, [色] / line <x1>, <y1>, <x2>, <y2>\n'
+    + '  填充: begin_fill ... end_fill（之间画的封闭图形用 fillcolor 填充）\n'
+    + '  循环: repeat <n> { ... }\n'
+    + '  清空: clear（清空画布已有内容，从原点重新绘制）\n'
+    + '\n'
+    + `颜色：支持 #rrggbb（如 #e74c3c）或 #rgb（如 #e7c），也支持颜色名：${names}。名字不区分大小写，更精确用 #rrggbb。\n`
+    + '\n'
+    + '初始状态：笔在原点 (0,0)，朝 0°（右），抬笔（pu）——要画线必须先 pd 落笔；描边色黑 #000000，线宽 3。\n'
+    + '\n'
+    + '重要：多参数命令必须用逗号分隔（如 goto 10, -20、rect 40, 30、line 0, 0, 10, 10、color red, blue），不要用空格。\n'
+    + '\n'
+    + '输出格式（必须严格遵守）：\n'
+    + '  响应用 <script>...</script> 包裹 turtle 脚本；分步任务的中间步再附加 <next>...</next> 给下一步的自然语言指令\n'
+    + '  每条命令独占一行，数字裸写（如 100、-50、3.5），不要引号、括号、逗号之外的标点\n'
+    + '  禁止：变量、等号赋值、数学表达式（如 2*50、90+45）、函数式写法（如 fd(50)、color("red")）、python 语法\n'
+    + '  只允许上面列出的命令，禁止任何未列出的命令或自造词\n'
     + '  <next> 是一句中文，说明下一步画什么（形状/颜色/位置），避免与 existing 重叠；最后一步不要写 <next>'
   );
 }
