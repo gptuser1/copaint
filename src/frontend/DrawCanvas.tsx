@@ -156,7 +156,8 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
         <Layer>
           {/* 画板底：暗色深灰，亮色白 */}
           <Rect x={0} y={0} width={width} height={height} fill={BOARD_BG[theme]} preventDefault={!readOnly} />
-          {elements.map(renderElement)}
+          {/* 按图层 z 升序渲染（稳定排序，同 z 保持落笔先后），后画的在上层 */}
+          {elements.slice().sort((a, b) => (a.z ?? 0) - (b.z ?? 0)).map(renderElement)}
           {draft && tool === 'pen' && draft.points.length >= 2 && (
             <Line points={draft.points} stroke={color} strokeWidth={strokeWidth} lineCap="round" lineJoin="round" preventDefault={!readOnly} />
           )}

@@ -26,6 +26,8 @@ export interface BoardElement {
   strokeWidth: number;
   // 创建者标识：用户 / AI / 外部 API
   by: 'user' | 'ai' | 'api';
+  // 图层（z-index）：越大越在上层；缺省 0，同 z 时按落笔先后（数组顺序）叠放
+  z?: number;
   createdAt: number;
 }
 

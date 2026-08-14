@@ -95,7 +95,9 @@ export function renderBoardToPng(elements: BoardElement[], width: number, height
     buf[i] = 255; buf[i + 1] = 255; buf[i + 2] = 255; buf[i + 3] = 255;
   }
 
-  for (const el of elements) {
+  // 按图层 z 升序绘制（稳定排序，同 z 保持落笔先后），后画的在上层
+  const ordered = elements.slice().sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+  for (const el of ordered) {
     const color = hexToRgba(el.color || '#000000', 1);
     const sw = el.strokeWidth || 2;
     switch (el.type) {
