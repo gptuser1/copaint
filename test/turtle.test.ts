@@ -55,13 +55,36 @@ describe('turtle', () => {
   });
 
   it('dot emits a filled shape', () => {
-    const items = runTurtle(`dot 20 red`, { startX: 100, startY: 100 });
+    const items = runTurtle(`dot 20, red`, { startX: 100, startY: 100 });
     const d = items[0];
     expect('fill' in d).toBe(true);
     if ('fill' in d) {
       expect(d.fill).toBe('#e74c3c');
       expect(d.points.length).toBeGreaterThan(4);
     }
+  });
+
+  it('supports comma-separated multi-arg commands with negatives', () => {
+    // 严格模式：多参数命令用逗号分隔，负号独立，无空格歧义
+    const items = runTurtle(
+      `pu goto 100, -50 pd circle 50, -180\ncolor red, blue\nrect 40, -30`,
+      { startX: 200, startY: 150 },
+    );
+    // circle(半圆) + rect（含轮廓）都产生笔画，共 2 个
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    // 落笔首个顶点应在 goto 目标 (100,-50)：画布 x=300, y=200
+    const first = items[0].points;
+    expect(Math.round(first[0])).toBe(300);
+    expect(Math.round(first[1])).toBe(200);
+    // rect 描边红色（color red, blue 的描边参数）
+    expect(items.some((i) => 'widths' in i && i.colors[0] === '#e74c3c')).toBe(true);
+  });
+
+  it('single-arg commands still allow spaced arithmetic', () => {
+    // 单参数命令参数是完整表达式，空格运算不受影响（仅多参数命令用逗号分隔）
+    const items = runTurtle(`pd fd 10 + 5`, { startX: 200, startY: 150 });
+    const p = items[0].points;
+    expect(Math.round(p[p.length - 2])).toBe(215); // 200+15
   });
 
   it('begin_fill/end_fill emits a filled polygon plus outline', () => {
@@ -92,9 +115,37 @@ describe('turtle', () => {
     expect(Math.round(p[p.length - 1])).toBeLessThan(50);
   });
 
+  it('goto accepts negative coordinates', () => {
+    // 走到左上（负 x 负 y）：画布 x = 200-100=100，画布 y = 150-(-50)=200
+    const items = runTurtle(
+      `pu goto -100, -50 pd fd 1`,
+      { startX: 200, startY: 150 },
+    );
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    expect(Math.round(p[0])).toBe(100);
+    expect(Math.round(p[1])).toBe(200);
+  });
+
+  it('goto keeps negative y separate from negative x', () => {
+    // 回归：goto 100, -50 之前空格写法会把 y 误算成减法吞掉，y 落到 0
+    const items = runTurtle(`pu goto 100, -50 pd fd 1`, { startX: 200, startY: 150 });
+    const p = items[0].points;
+    expect(Math.round(p[0])).toBe(300); // 200+100
+    // 逻辑 y=-50 → 画布 y = 150-(-50) = 200，而不是 150
+    expect(Math.round(p[1])).toBe(200);
+  });
+
+  it('goto supports negative coordinates with expressions', () => {
+    const items = runTurtle(`pu goto -100, 0 sety -50 pd fd 1`, { startX: 200, startY: 150 });
+    const p = items[0].points;
+    expect(Math.round(p[0])).toBe(100);   // 200-100
+    expect(Math.round(p[1])).toBe(200);   // 150-(-50)
+  });
+
   it('rect, ellipse and line produce strokes', () => {
     const items = runTurtle(
-      `rect 40 30\nellipse 20 10\nline 0 0 10 10`,
+      `rect 40, 30\nellipse 20, 10\nline 0, 0, 10, 10`,
       { startX: 200, startY: 150 },
     );
     expect(items.length).toBe(3);

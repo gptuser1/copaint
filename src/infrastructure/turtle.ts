@@ -222,6 +222,8 @@ function skipPrim(tokens: Token[], pos: { i: number }): void {
     }
     return;
   }
+  // 顶层逗号：命令参数分隔符，表达式在此停止（不消费，交给命令解析切分）
+  if (t.type === 'op' && t.value === ',') return;
   pos.i++;
 }
 
@@ -268,12 +270,16 @@ function parse(tokens: Token[]): Stmt[] {
       if (isOpTok(tokens, pos, ')')) pos.i++;
       return { kind: 'call', name, args };
     }
+    // 命令参数一律用逗号分隔（严格模式）：goto 100, -50 / rect 40, 30 / line 0, 0, 10, 10。
+    // 每个参数是一个完整表达式（term 会在顶层逗号处停止），负号天然独立，无空格歧义。
     const args: Token[][] = [];
     while (pos.i < tokens.length) {
       const t = tokens[pos.i];
       if (t.type === 'op' && (t.value === '{' || t.value === '}')) break;
       if (t.type === 'ident' && COMMANDS.has(t.value)) break;
-      args.push(term());
+      const start = pos.i;
+      term();
+      args.push(tokens.slice(start, pos.i));
       if (isOpTok(tokens, pos, ',')) pos.i++;
     }
     return { kind: 'cmd', name, args };
