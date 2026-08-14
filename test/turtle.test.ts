@@ -55,22 +55,22 @@ describe('turtle', () => {
   });
 
   it('circle arc direction matches standard turtle', () => {
-    // 标准 turtle：圆心在起点左侧（r>0），右转=顺时针。circle 50,90 终点应在起点左50上50。
-    // 逻辑(-50,50) → 屏幕(150,100)
+    // 标准 turtle：圆心在朝向左侧（r>0）。circle 50,90 从(0,0)朝右起：
+    // 圆心(0,50)，终点(50,50)；逻辑(50,50) → 屏幕(250,100)
     const a = runTurtle(`pd circle 50, 90`, { startX: 200, startY: 150 });
     const ap = a[0].points;
-    expect(Math.round(ap[ap.length - 2])).toBe(150);
+    expect(Math.round(ap[ap.length - 2])).toBe(250);
     expect(Math.round(ap[ap.length - 1])).toBe(100);
-    // circle 50,-180 顺时针半圆：终点在起点左100，逻辑(-100,0) → 屏幕(100,150)
+    // circle 50,-180 顺时针半圆：终点在起点正上方，逻辑(0,100) → 屏幕(200,50)
     const b = runTurtle(`pd circle 50, -180`, { startX: 200, startY: 150 });
     const bp = b[0].points;
-    expect(Math.round(bp[bp.length - 2])).toBe(100);
-    expect(Math.round(bp[bp.length - 1])).toBe(150);
-    // circle -50,90 圆心在右侧：终点逻辑(50,50) → 屏幕(250,100)
+    expect(Math.round(bp[bp.length - 2])).toBe(200);
+    expect(Math.round(bp[bp.length - 1])).toBe(50);
+    // circle -50,90 圆心在右侧：终点逻辑(-50,-50) → 屏幕(150,200)
     const c = runTurtle(`pd circle -50, 90`, { startX: 200, startY: 150 });
     const cp = c[0].points;
-    expect(Math.round(cp[cp.length - 2])).toBe(250);
-    expect(Math.round(cp[cp.length - 1])).toBe(100);
+    expect(Math.round(cp[cp.length - 2])).toBe(150);
+    expect(Math.round(cp[cp.length - 1])).toBe(200);
   });
 
   it('dot emits a filled shape', () => {

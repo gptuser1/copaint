@@ -494,22 +494,25 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     if (!Number.isFinite(extent) || extent === 0) extent = 360;
     const wasDown = penDown;
     flush();
-    // 标准 turtle：圆心在 turtle 左侧（r>0）或右侧（r<0），距当前点 |r|。
-    // 有理坐标 y 向上，故 cx = x - r；起点在当前点（位于圆心正右/正左，θ=0 或 π）。
-    const cx = x - r;
-    const cy = y;
-    const startAng = r > 0 ? 0 : Math.PI;
+    // 标准 turtle：圆心在朝向左侧（r>0）或右侧（r<0），距当前点 |r|。
+    // 朝向偏转 90° 即左侧方向（-sin, cos），故 cx=x-r·sinθ、cy=y+r·cosθ。
+    const rad = (heading * Math.PI) / 180;
+    const cx = x - r * Math.sin(rad);
+    const cy = y + r * Math.cos(rad);
+    // 起点即当前点，其相对圆心的角度（标准 turtle 从"底点"开始）
+    const startAng = Math.atan2(y - cy, x - cx);
     const n = steps && steps >= 3
       ? Math.round(steps)
       : Math.max(4, Math.round(Math.min(Math.abs(extent), 360) / 4));
-    const per = (extent * Math.PI) / (180 * n); // 每步角度（带符号，弧度）
+    // 每步弧角：r>0 逆时针（正向）、r<0 顺时针（反向）；extent 决定总角度
+    const per = (extent * Math.PI / (180 * n)) * (r < 0 ? -1 : 1);
     penDown = true;
     for (let k = 1; k <= n && ops <= maxOps; k++) {
       const a = startAng + per * k;
       gotoAbs(cx + r * Math.cos(a), cy + r * Math.sin(a));
     }
-    // 圆/弧累计转动 extent 度（extent 正=逆时针，负=顺时针）
-    heading += extent;
+    // 朝向累计：r>0 转 +extent，r<0 转 -extent
+    heading += r < 0 ? -extent : extent;
     if (!wasDown) { flush(); penDown = false; }
   }
 
