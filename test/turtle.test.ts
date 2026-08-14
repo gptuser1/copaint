@@ -453,4 +453,29 @@ describe('turtle conformance with standard semantics', () => {
     const d = items[0];
     expect('fill' in d && d.fill).toBe('#e74c3c');
   });
+
+  it('draws concentric squares centered at origin (doc example)', () => {
+    // 每圈 pu 移到左下角(-size/2,-size/2)再 pd 画，lt 90 使正方形朝 +x/+y 展开，
+    // 从而所有正方形都以原点为中心（同心），而非共用同一角点
+    const items = runTurtle(
+      `size = 20
+      repeat 3 {
+        pu goto -size/2, -size/2
+        pd
+        repeat 4 { fd size lt 90 }
+        size = size + 20
+      }`,
+      C,
+    );
+    expect(items.length).toBe(3);
+    for (const it of items) {
+      const p = it.points;
+      const xs = p.filter((_, i) => i % 2 === 0);
+      const ys = p.filter((_, i) => i % 2 === 1);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+      expect(Math.round(cx)).toBe(200); // 画布中心 x
+      expect(Math.round(cy)).toBe(150); // 画布中心 y
+    }
+  });
 });
