@@ -101,11 +101,10 @@ function buildFixedSystem(boardWidth: number, boardHeight: number): string {
     + '重要：多参数命令必须用逗号分隔（如 goto 10, -20、rect 40, 30、line 0, 0, 10, 10、color red, blue），不要用空格。\n'
     + '\n'
     + '输出格式（必须严格遵守）：\n'
-    + '  响应用 <script>...</script> 包裹 turtle 脚本；分步任务的中间步再附加 <next>...</next> 给下一步的自然语言指令\n'
+    + '  响应用 <script>...</script> 包裹 turtle 脚本\n'
     + '  每条命令独占一行，数字裸写（如 100、-50、3.5），不要引号、括号、逗号之外的标点\n'
     + '  禁止：变量、等号赋值、数学表达式（如 2*50、90+45）、函数式写法（如 fd(50)、color("red")）、python 语法\n'
-    + '  只允许上面列出的命令，禁止任何未列出的命令或自造词\n'
-    + '  <next> 是一句中文，说明下一步画什么（形状/颜色/位置），避免与 existing 重叠；最后一步不要写 <next>'
+    + '  只允许上面列出的命令，禁止任何未列出的命令或自造词'
   );
 }
 
@@ -119,7 +118,7 @@ export function buildTurtlePrompt(
   const w = Math.round(boardWidth);
   const h = Math.round(boardHeight);
   // 动态内容全部追加在 user 末尾，保持 system 与 user 前缀稳定，
-  // 使同一画布/同一分步任务的后续请求可命中 prompt 缓存，降低调用成本
+  // 使同一画布/同一任务的后续请求可命中 prompt 缓存，降低调用成本
   const dynamic = `${summarizeElements(existing, boardWidth, boardHeight)}\n${stepHint}`;
   return [
     { role: 'system', content: buildFixedSystem(boardWidth, boardHeight) },
@@ -127,17 +126,16 @@ export function buildTurtlePrompt(
   ];
 }
 
-// 解析 LLM 响应：<script> 包裹的 turtle 脚本 + 可选 <next> 包裹的下一步指令。
+// 解析 LLM 响应：<script> 包裹的 turtle 脚本。
 // 无 <script> 时把整体当脚本，并兼容 ``` 代码块围栏（单次/旧响应兜底）。
-export function parseTurtleResponse(raw: string): { script: string; next: string } {
+export function parseTurtleResponse(raw: string): { script: string } {
   const scriptM = raw.match(/<script>([\s\S]*?)<\/script>/i);
-  const nextM = raw.match(/<next>([\s\S]*?)<\/next>/i);
   let script = scriptM ? scriptM[1].trim() : raw.trim();
   if (!scriptM) {
     const fence = script.match(/```(?:turtle|python)?\n?([\s\S]*?)```/);
     if (fence) script = fence[1].trim();
   }
-  return { script, next: nextM ? nextM[1].trim() : '' };
+  return { script };
 }
 
 // 组装可调参数并调用 LLM，返回原始响应文本
@@ -188,16 +186,15 @@ export async function generateTurtleScript(
 }
 
 // 调用 LLM 生成 turtle 脚本并落笔成元素（内置 AI 唯一绘制路径）。
-// 返回本步生成的元素 + 给下一步的自然语言指令（多步任务用 next 驱动下一步）
-// + cleared（脚本含 clear 指令，执行前需先清空画布）。
+// 返回本步生成的元素 + cleared（脚本含 clear 指令，执行前需先清空画布）。
 export async function generateTurtleElements(
   config: LlmConfig,
   input: DrawInput,
   params?: LlmParams,
-): Promise<{ elements: Partial<BoardElement>[]; next: string; cleared: boolean }> {
+): Promise<{ elements: Partial<BoardElement>[]; cleared: boolean }> {
   const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint, input.elements);
-  const { script, next } = parseTurtleResponse(await callLLM(config, messages, params));
-  if (!script.trim()) return { elements: [], next, cleared: false };
+  const { script } = parseTurtleResponse(await callLLM(config, messages, params));
+  if (!script.trim()) return { elements: [], cleared: false };
   const items = runTurtle(script, {
     startX: input.width / 2,
     startY: input.height / 2,
@@ -205,7 +202,6 @@ export async function generateTurtleElements(
   });
   return {
     elements: turtleToElements(items, { id: `ai_${Date.now().toString(36)}` }),
-    next,
     cleared: items.some(isClearItem),
   };
 }

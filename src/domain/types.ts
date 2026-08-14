@@ -47,11 +47,6 @@ export interface BoardState {
 export interface AiJob {
   boardId: string;
   instruction: string;
-  // 'once': 单次 | 'multi': 多步链式（内置 AI 一律用 turtle 脚本绘制）
-  mode: 'once' | 'multi';
-  stepIndex: number; // 0-based，当前步
-  totalSteps: number; // 多步总步数
-  delayMs: number;    // 步间间隔
   // 入队时的 AI 代次；消费时若小于当前代次则视为已取消
   epoch: number;
   // LLM 可调参数（前端下发）

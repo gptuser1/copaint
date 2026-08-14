@@ -28,7 +28,6 @@ describe('ai turtle prompt', () => {
 
   it('demands strict output format', () => {
     expect(sys).toContain('<script>');
-    expect(sys).toContain('<next>');
     expect(sys).toContain('禁止');
     expect(sys).toContain('只允许');
   });
@@ -84,23 +83,17 @@ describe('ai turtle prompt', () => {
 });
 
 describe('parseTurtleResponse', () => {
-  it('extracts script and next from tagged response', () => {
-    const r = parseTurtleResponse('<script>\npd fd 100\nlt 90\n</script>\n<next>画屋顶，用红色填充</next>');
+  it('extracts script from tagged response', () => {
+    const r = parseTurtleResponse('<script>\npd fd 100\nlt 90\n</script>');
     expect(r.script).toBe('pd fd 100\nlt 90');
-    expect(r.next).toBe('画屋顶，用红色填充');
   });
 
   it('falls back to bare script when no tags', () => {
     const r = parseTurtleResponse('pd fd 50');
     expect(r.script).toBe('pd fd 50');
-    expect(r.next).toBe('');
   });
 
   it('handles code fence fallback', () => {
     expect(parseTurtleResponse('```turtle\npd fd 50\n```').script).toBe('pd fd 50');
-  });
-
-  it('returns empty next when <next> missing', () => {
-    expect(parseTurtleResponse('<script>pd fd 10</script>').next).toBe('');
   });
 });

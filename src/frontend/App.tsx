@@ -66,9 +66,6 @@ interface AiLog {
   id: number;
   time: string;
   message: string;
-  mode: 'once' | 'multi';
-  step?: number;
-  totalSteps?: number;
   success?: boolean;
   error?: string;
 }
@@ -81,8 +78,6 @@ export function App() {
   const [color, setColor] = useState('#000000');
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [instruction, setInstruction] = useState('');
-  const [mode, setMode] = useState<'once' | 'multi'>('once');
-  const [steps, setSteps] = useState(5);
   // LLM 可调参数（字符串态，允许输入框删到空，提交时再解析成数字）
   const [temperature, setTemperature] = useState('0.7');
   const [maxTokens, setMaxTokens] = useState('2048');
@@ -169,9 +164,6 @@ export function App() {
         const p = msg.payload || {};
         addLog({
           message: p.message || 'AI 完成',
-          mode: p.mode || 'once',
-          step: p.step,
-          totalSteps: p.totalSteps,
           success: !!p.success,
           error: p.error || '',
         });
@@ -260,7 +252,7 @@ export function App() {
     setAiBusy(true);
     setError('');
     try {
-      await api.runAi(instr, mode, steps, 2000, {
+      await api.runAi(instr, {
         temperature: parseNum(temperature, 0.7),
         maxTokens: parseNum(maxTokens, 2048),
         thinking,
@@ -271,7 +263,7 @@ export function App() {
     } finally {
       setAiBusy(false);
     }
-  }, [instruction, mode, steps, temperature, maxTokens, thinking]);
+  }, [instruction, temperature, maxTokens, thinking]);
 
   const handleExport = useCallback(async () => {
     try {
@@ -294,10 +286,10 @@ export function App() {
         maxTokens: parseNum(maxTokens, 2048),
         thinking,
       });
-      addLog({ message: `🔬 测试响应: ${res.raw}`, mode: 'once', success: true });
+      addLog({ message: `🔬 测试响应: ${res.raw}`, success: true });
     } catch (e) {
       const msg = String((e as Error).message || e);
-      addLog({ message: `🔬 测试失败: ${msg}`, mode: 'once', success: false, error: msg });
+      addLog({ message: `🔬 测试失败: ${msg}`, success: false, error: msg });
     } finally {
       setAiBusy(false);
     }
@@ -308,7 +300,7 @@ export function App() {
     setError('');
     try {
       const res = await api.cancelAi();
-      addLog({ message: `⏹ 已终止 AI 队列（epoch=${res.epoch}），排队的旧任务将被跳过`, mode: 'once', success: true });
+      addLog({ message: `⏹ 已终止 AI 队列（epoch=${res.epoch}），排队的旧任务将被跳过`, success: true });
     } catch (e) {
       setError(String((e as Error).message || e));
     }
@@ -396,16 +388,6 @@ export function App() {
           placeholder="输入指令，如：画一个红色的太阳在左上角"
           style={{ flex: 1, minWidth: 280, padding: 6 }}
         />
-        <select value={mode} onChange={(e) => setMode(e.target.value as 'once' | 'multi')} style={{ padding: 6 }}>
-          <option value="once">单次</option>
-          <option value="multi">分步</option>
-        </select>
-        {mode === 'multi' && (
-          <>
-            <span>步数</span>
-            <input type="number" min={1} max={10} value={steps} onChange={(e) => setSteps(Number(e.target.value))} style={{ width: 60, padding: 6 }} />
-          </>
-        )}
         <button onClick={handleAi} disabled={aiBusy} style={{ ...btnStyle, background: aiBusy ? 'var(--btn-bg)' : '#4caf50', color: aiBusy ? 'var(--muted)' : '#fff' }}>
           {aiBusy ? '处理中…' : '🤖 让 AI 画'}
         </button>
@@ -456,9 +438,6 @@ export function App() {
           {aiLogs.map((log) => (
             <div key={log.id}>
               <span style={{ color: '#888' }}>{log.time}</span>{' '}
-              <span style={{ color: log.mode === 'multi' ? '#7fd5ff' : '#7ee787' }}>
-                {log.mode === 'multi' && log.step != null ? `[步骤 ${log.step + 1}/${log.totalSteps}] ` : ''}
-              </span>
               <span style={{ color: log.success === false ? '#ff6b6b' : '#d6d6d6' }}>{log.message}</span>
               {log.error && <div style={{ color: '#ff8787', marginLeft: 8, whiteSpace: 'pre-wrap' }}>{log.error}</div>}
             </div>

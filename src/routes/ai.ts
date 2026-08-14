@@ -1,4 +1,4 @@
-// AI 指令路由：入队（单次或多步） + 直接测试（不入队）+ 终止队列
+// AI 指令路由：入队（单次） + 直接测试（不入队）+ 终止队列
 import { Hono } from 'hono';
 import { getState, getAiEpoch, cancelAiTasks } from '../realtime/board-client';
 import { requireConfig } from '../services/config';
@@ -14,11 +14,6 @@ aiApp.post('/:id/ai', async (c) => {
   const instruction = (body.instruction || '').trim();
   if (!instruction) throw new ValidationError('instruction required');
 
-  const mode: 'once' | 'multi' =
-    body.mode === 'multi' ? 'multi' : 'once';
-  const totalSteps = mode === 'multi' ? Math.max(1, Math.min(10, Number(body.steps) || 5)) : 1;
-  const delayMs = Number(body.delayMs) > 0 ? Number(body.delayMs) : 2000;
-
   // 可调 LLM 参数（前端下发，均可选）
   const temperature = Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : undefined;
   const maxTokens = Number.isFinite(Number(body.maxTokens)) ? Number(body.maxTokens) : undefined;
@@ -27,17 +22,13 @@ aiApp.post('/:id/ai', async (c) => {
   const job: AiJob = {
     boardId: id,
     instruction,
-    mode,
-    stepIndex: 0,
-    totalSteps,
-    delayMs,
     epoch: await getAiEpoch(c.env, id),
     temperature,
     maxTokens,
     thinking,
   };
   await c.env.AI_QUEUE.send(job);
-  return c.json({ ok: true, mode, totalSteps });
+  return c.json({ ok: true });
 });
 
 // 终止当前队列所有 AI 任务
