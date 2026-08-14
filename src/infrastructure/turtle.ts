@@ -492,7 +492,6 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   function circleCmd(r: number, extent: number, steps?: number) {
     if (!Number.isFinite(r) || r === 0) return;
     if (!Number.isFinite(extent) || extent === 0) extent = 360;
-    const wasDown = penDown;
     flush();
     // 标准 turtle：圆心在朝向左侧（r>0）或右侧（r<0），距当前点 |r|。
     // 朝向偏转 90° 即左侧方向（-sin, cos），故 cx=x-r·sinθ、cy=y+r·cosθ。
@@ -506,14 +505,13 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
       : Math.max(4, Math.round(Math.min(Math.abs(extent), 360) / 4));
     // 每步弧角：r>0 逆时针（正向）、r<0 顺时针（反向）；extent 决定总角度
     const per = (extent * Math.PI / (180 * n)) * (r < 0 ? -1 : 1);
-    penDown = true;
+    // 尊重画笔状态：pd 才画线，pu 只移动（对齐标准 turtle）
     for (let k = 1; k <= n && ops <= maxOps; k++) {
       const a = startAng + per * k;
       gotoAbs(cx + r * Math.cos(a), cy + r * Math.sin(a));
     }
     // 朝向累计：r>0 转 +extent，r<0 转 -extent
     heading += r < 0 ? -extent : extent;
-    if (!wasDown) { flush(); penDown = false; }
   }
 
   function dotCmd(size: number, col?: string) {

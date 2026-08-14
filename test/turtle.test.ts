@@ -367,3 +367,90 @@ describe('turtle', () => {
     expect(runTurtle('n=3; pd repeat n { dot 10, blue }', { startX: 0, startY: 0 }).length).toBe(3);
   });
 });
+
+// ── 规约：对齐标准 Python turtle 的关键语义不变式 ──
+describe('turtle conformance with standard semantics', () => {
+  // 逻辑 (0,0) → 屏幕 (200,150)
+  const C = { startX: 200, startY: 150 };
+
+  it('fd moves along heading; heading 0 = +x, 90 = +y', () => {
+    // 朝右 fd 100：逻辑(100,0) → 屏幕(300,150)
+    const a = runTurtle(`pd fd 100`, C);
+    expect(a[0].points[0]).toBe(200);
+    expect(a[0].points[1]).toBe(150);
+    expect(a[0].points[a[0].points.length - 2]).toBe(300);
+    expect(a[0].points[a[0].points.length - 1]).toBe(150);
+    // 朝上 fd 100：逻辑(0,100) → 屏幕(200,50)
+    const b = runTurtle(`pd lt 90 fd 100`, C);
+    expect(b[0].points[b[0].points.length - 2]).toBe(200);
+    expect(b[0].points[b[0].points.length - 1]).toBe(50);
+  });
+
+  it('bk is backward: heading unchanged, moves opposite fd', () => {
+    const a = runTurtle(`pd bk 100`, C);
+    expect(a[0].points[a[0].points.length - 2]).toBe(100); // 逻辑(-100,0)
+    expect(a[0].points[a[0].points.length - 1]).toBe(150);
+  });
+
+  it('lt increases heading (ccw), rt decreases (cw)', () => {
+    // 朝右 lt 90 → 朝上；朝右 rt 90 → 朝下（逻辑 y-=）
+    const a = runTurtle(`pd lt 90 fd 50`, C);
+    expect(a[0].points[a[0].points.length - 1]).toBe(100); // (0,50)→y=100
+    const b = runTurtle(`pd rt 90 fd 50`, C);
+    expect(b[0].points[b[0].points.length - 1]).toBe(200); // (0,-50)→y=200
+  });
+
+  it('goto/setx/sety move without changing heading', () => {
+    // goto 后继续 fd 应仍朝右（heading=0）
+    const a = runTurtle(`pd goto 50, 0 fd 50`, C);
+    expect(a[0].points[a[0].points.length - 2]).toBe(300); // 逻辑(100,0)
+  });
+
+  it('setheading sets absolute heading; home returns to origin heading east', () => {
+    // setheading 90 后 fd 朝上
+    const a = runTurtle(`pd setheading 90 fd 40`, C);
+    expect(a[0].points[a[0].points.length - 1]).toBe(110); // (0,40)→y=110
+    // home 回到原点，且 heading 归 0（朝右）
+    const b = runTurtle(`pd fd 30 home fd 40`, { startX: 200, startY: 150 });
+    expect(b.length).toBeGreaterThanOrEqual(1);
+    const last = b[b.length - 1].points;
+    expect(last[last.length - 2]).toBe(240); // home 后朝右 fd40 → 逻辑(40,0)
+  });
+
+  it('pen state: pu moves without drawing, pd draws', () => {
+    const up = runTurtle(`pu fd 100`, C);
+    expect(up.length).toBe(0);
+    const down = runTurtle(`pd fd 100`, C);
+    expect(down.length).toBe(1);
+  });
+
+  it('circle with pen up moves only (standard turtle)', () => {
+    const items = runTurtle(`pu circle 40`, C);
+    expect(items.length).toBe(0);
+    const drawn = runTurtle(`pd circle 40, 90`, C);
+    expect(drawn.length).toBe(1);
+  });
+
+  it('begin_fill/end_fill emits a filled polygon', () => {
+    const items = runTurtle(`pd begin_fill rect 40, 30 end_fill`, C);
+    const poly = items.find((i) => 'fill' in i && i.fill);
+    expect(poly).toBeTruthy();
+    if (poly && 'fill' in poly) expect(poly.fill).toBe('#000000');
+  });
+
+  it('clear does not move the pen or reset heading', () => {
+    // clear 后位置与朝向保持不变：fd30 停在(30,0)，clear 不动画笔，再 fd20 从原位朝右画
+    const items = runTurtle(`pd fd 30 clear fd 20`, C);
+    const strokes = items.filter((i) => !('type' in i && i.type === 'clear'));
+    expect(strokes.length).toBe(1); // 只有 clear 后的 fd20 一段
+    const s = strokes[0].points;
+    expect(Math.round(s[0])).toBe(230); // 起点 (30,0) → 屏幕(230,150)
+    expect(Math.round(s[s.length - 2])).toBe(250); // 终点 (50,0) → 屏幕(250,150)
+  });
+
+  it('dot fills with the given color', () => {
+    const items = runTurtle(`dot 20, red`, C);
+    const d = items[0];
+    expect('fill' in d && d.fill).toBe('#e74c3c');
+  });
+});
