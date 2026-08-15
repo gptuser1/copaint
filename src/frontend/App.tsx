@@ -139,8 +139,6 @@ export function App() {
   // 流式展示：AI 思维链与正文（原始响应）
   const [aiThinking, setAiThinking] = useState('');
   const [aiResponse, setAiResponse] = useState('');
-  // 最近一次 AI 调用的用量统计（token/缓存/推理）
-  const [aiUsage, setAiUsage] = useState<api.AiUsage | null>(null);
   // 可折叠工具栏
   const [toolbarOpen, setToolbarOpen] = useState(true);
   // 输出面板收起态
@@ -316,7 +314,6 @@ export function App() {
     setError('');
     setAiThinking('');
     setAiResponse('');
-    setAiUsage(null);
     try {
       await api.runAiStream(instr, {
         temperature: parseNum(temperature, 0.7),
@@ -328,13 +325,10 @@ export function App() {
           setAiThinking((p) => p + (ev.text || ''));
         } else if (ev.type === 'response') {
           setAiResponse((p) => p + (ev.text || ''));
-        } else if (ev.type === 'usage') {
-          if (ev.usage) setAiUsage(ev.usage);
         } else if (ev.type === 'done') {
-          if (ev.usage) setAiUsage(ev.usage);
           if (ev.script) setTestScript(ev.script);
           addLog({
-            message: `🤖 AI 完成，生成 ${ev.added ?? 0} 个元素${ev.cleared ? '（已清空画布）' : ''}`,
+            message: `🤖 AI 完成，生成 ${ev.added ?? 0} 个元素${ev.cleared ? '（已清空画布）' : ''}${formatUsage(ev.usage ?? null) ? `｜${formatUsage(ev.usage ?? null)}` : ''}`,
             success: true,
           });
           setInstruction('');
@@ -367,7 +361,6 @@ export function App() {
     setError('');
     setAiThinking('');
     setAiResponse('');
-    setAiUsage(null);
     try {
       await api.runAiStream(instr, {
         temperature: parseNum(temperature, 0.7),
@@ -380,12 +373,9 @@ export function App() {
           setAiThinking((p) => p + (ev.text || ''));
         } else if (ev.type === 'response') {
           setAiResponse((p) => p + (ev.text || ''));
-        } else if (ev.type === 'usage') {
-          if (ev.usage) setAiUsage(ev.usage);
         } else if (ev.type === 'done') {
-          if (ev.usage) setAiUsage(ev.usage);
           if (ev.script) setTestScript(ev.script);
-          addLog({ message: ev.script ? `🔬 测试完成，脚本已就绪，可点击「执行到画布」` : '🔬 测试完成，但未返回有效脚本', success: true });
+          addLog({ message: `🔬 测试完成${formatUsage(ev.usage ?? null) ? `｜${formatUsage(ev.usage ?? null)}` : ''}${ev.script ? '，脚本已就绪，可点击「执行到画布」' : '，但未返回有效脚本'}`, success: true });
         } else if (ev.type === 'error') {
           addLog({ message: `🔬 测试失败: ${ev.error || '未知错误'}`, success: false, error: ev.error });
         }
@@ -567,11 +557,6 @@ export function App() {
         <pre style={monoStyle}>
           {aiResponse || '暂无内容。AI 的原始回文字段会实时显示在这里。'}
         </pre>
-        {aiUsage && (
-          <div style={{ marginTop: 8, padding: '6px 10px', background: '#f1f5f9', borderRadius: 6, fontSize: 12, color: '#475569' }}>
-            ⚡ {formatUsage(aiUsage)}
-          </div>
-        )}
       </CollapsibleSection>
 
       {/* turtle 脚本输入/预览：可粘贴或编辑脚本，选择执行到画布；测试 AI 的结果也会填入此处 */}
