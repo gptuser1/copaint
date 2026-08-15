@@ -25,100 +25,156 @@ export interface LlmParams {
   thinking?: boolean;
 }
 
-// 把画布已有元素转成精简摘要（转成 turtle 逻辑坐标：中心原点、y 向上），
-// 注入提示词让 AI 感知已画内容，多步/延续绘制时避免重叠或重复
-function summarizeElements(elements: BoardElement[], width: number, height: number): string {
+// 把画布已有元素转成「布局网格 + 元素清单」摘要，注入提示词让无多模态 LLM
+// 从文字理解画布现状（哪里已有什么），以便在已有内容基础上协作续画。
+// 所有元素都是同级别的创作物，不区分作者。
+// gridSize 可调网格分辨率：格子越细信息越多、token 越多；默认 20×15（每格约 20px）。
+export function summarizeElements(
+  elements: BoardElement[],
+  width: number,
+  height: number,
+  gridSize?: { cols: number; rows: number },
+): string {
   const MAX = 40; // 只摘要最近 40 个，避免提示词过大
   const halfW = width / 2;
   const halfH = height / 2;
-  // 画布坐标（左上原点、y 向下）→ 逻辑坐标（中心原点、y 向上）
-  const lx = (x: number) => Math.round(x - halfW);
-  const ly = (y: number) => Math.round(halfH - y);
-  const lines: string[] = [];
-  for (const e of elements.slice(-MAX)) {
+  // 逻辑坐标（中心原点、y 向上）↔ 画布坐标（左上原点、y 向下）
+  const lx = (x: number) => x - halfW;
+  const ly = (y: number) => halfH - y;
+  const used = elements.slice(-MAX);
+
+  // ── 1) 网格字符图：给 AI 布局直觉 ──
+  const COLS = gridSize?.cols ?? 20, ROWS = gridSize?.rows ?? 15;
+  const cellW = width / COLS, cellH = height / ROWS;
+  // 逻辑坐标 → 网格 (c, r)；r=0 在顶部（逻辑 y 最大），列 c=0 在左（逻辑 x 最小）
+  const gc = (lxv: number) => Math.max(0, Math.min(COLS - 1, Math.floor((lxv + halfW) / cellW)));
+  const gr = (lyv: number) => Math.max(0, Math.min(ROWS - 1, Math.floor((halfH - lyv) / cellH)));
+  const grid: string[][] = Array.from({ length: ROWS }, () => Array<string>(COLS).fill('.'));
+  const fillCell = (c: number, r: number, ch: string) => { grid[r][c] = ch; };
+  const fillRect = (c0: number, r0: number, c1: number, r1: number, ch: string) => {
+    for (let r = Math.min(r0, r1); r <= Math.max(r0, r1); r++)
+      for (let c = Math.min(c0, c1); c <= Math.max(c0, c1); c++) grid[r][c] = ch;
+  };
+  for (const e of used) {
+    const ch = e.type === 'pen' || e.type === 'eraser' ? 'o'
+      : e.type === 'rect' ? 'r' : e.type === 'ellipse' ? 'e'
+      : e.type === 'line' ? 'l' : 'p';
+    if (e.type === 'rect') {
+      const x0 = e.x ?? 0, y0 = e.y ?? 0;
+      fillRect(gc(lx(x0)), gr(ly((y0 + (e.height ?? 0)))), gc(lx(x0 + (e.width ?? 0))), gr(ly(y0)), ch);
+    } else if (e.type === 'ellipse') {
+      const cx = e.x ?? 0, cy = e.y ?? 0, rx = (e.width ?? 0) / 2, ry = (e.height ?? 0) / 2;
+      // 保守：用外接矩形占格，粗粒度够用
+      fillRect(gc(lx(cx - rx)), gr(ly(cy + ry)), gc(lx(cx + rx)), gr(ly(cy - ry)), ch);
+    } else {
+      const pts = e.points && e.points.length
+        ? e.points
+        : (e.type === 'line' ? [e.x ?? 0, e.y ?? 0, e.x2 ?? 0, e.y2 ?? 0] : []);
+      if (e.type === 'line') {
+        const x0 = pts[0], y0 = pts[1], x1 = pts[2], y1 = pts[3];
+        const steps = Math.max(Math.abs(gc(lx(x1)) - gc(lx(x0))), Math.abs(gr(ly(y1)) - gr(ly(y0))), 1);
+        for (let k = 0; k <= steps; k++) {
+          const t = k / steps;
+          fillCell(gc(lx(x0 + (x1 - x0) * t)), gr(ly(y0 + (y1 - y0) * t)), ch);
+        }
+      } else {
+        for (let k = 0; k + 1 < pts.length; k += 2) fillCell(gc(lx(pts[k])), gr(ly(pts[k + 1])), ch);
+      }
+    }
+  }
+  const gridText = renderGrid(grid);
+
+  // ── 2) 元素清单：紧凑格式，结构化元素给精确几何，自由线给中心/范围 ──
+  const list: string[] = [];
+  for (const e of used) {
     let desc = '';
     if (e.type === 'pen' || e.type === 'eraser') {
       const pts = e.points || [];
       if (pts.length < 4) continue;
       const xs = pts.filter((_, i) => i % 2 === 0);
       const ys = pts.filter((_, i) => i % 2 === 1);
-      const cx = lx((Math.min(...xs) + Math.max(...xs)) / 2);
-      const cy = ly((Math.min(...ys) + Math.max(...ys)) / 2);
-      desc = `${e.type} 中心(${cx},${cy}) 约${Math.round(pts.length / 2)}点`;
+      desc = `o 中心(${Math.round(lx((Math.min(...xs) + Math.max(...xs)) / 2))},${Math.round(ly((Math.min(...ys) + Math.max(...ys)) / 2))})`
+        + ` 约${Math.round(Math.max(...xs) - Math.min(...xs))}×${Math.round(Math.max(...ys) - Math.min(...ys))}px ${Math.round(pts.length / 2)}点`;
     } else if (e.type === 'line') {
-      const x = e.x ?? 0, y = e.y ?? 0, x2 = e.x2 ?? 0, y2 = e.y2 ?? 0;
-      desc = `line (${lx(x)},${ly(y)})→(${lx(x2)},${ly(y2)})`;
+      desc = `l (${Math.round(lx(e.x ?? 0))},${Math.round(ly(e.y ?? 0))})->(${Math.round(lx(e.x2 ?? 0))},${Math.round(ly(e.y2 ?? 0))})`;
     } else if (e.type === 'polygon') {
       const pts = e.points || [];
       if (pts.length < 4) continue;
       const xs = pts.filter((_, i) => i % 2 === 0);
       const ys = pts.filter((_, i) => i % 2 === 1);
-      const cx = lx((Math.min(...xs) + Math.max(...xs)) / 2);
-      const cy = ly((Math.min(...ys) + Math.max(...ys)) / 2);
-      desc = `polygon 中心(${cx},${cy}) fill=${e.fill || e.color}`;
+      desc = `p 中心(${Math.round(lx((Math.min(...xs) + Math.max(...xs)) / 2))},${Math.round(ly((Math.min(...ys) + Math.max(...ys)) / 2))})`
+        + ` 约${Math.round(Math.max(...xs) - Math.min(...xs))}×${Math.round(Math.max(...ys) - Math.min(...ys))}px fill=${e.fill || e.color}`;
     } else {
       // rect / ellipse
       const x = e.x ?? 0, y = e.y ?? 0, w = e.width ?? 0, h = e.height ?? 0;
-      desc = `${e.type} 中心(${lx(x + w / 2)},${ly(y + h / 2)}) ${w}×${h}`;
+      const t = e.type === 'rect' ? 'r' : 'e';
+      desc = `${t}(${Math.round(lx(x + w / 2))},${Math.round(ly(y + h / 2))})${Math.round(w)}x${Math.round(h)}`;
     }
-    if (e.color) desc += ` 色=${e.color}`;
-    lines.push(`    - ${desc}`);
+    if (e.color) desc += ` #${e.color.replace('#', '')}`;
+    list.push(`  ${desc}`);
   }
-  if (lines.length === 0) return 'existing: none（空画板）';
-  return `existing (${lines.length} 个):\n${lines.join('\n')}`;
+  if (used.length === 0) return 'existing: none（空画板）';
+  return `existing: ${used.length}个 网格${COLS}x${ROWS}(r=矩形 e=椭圆 l=线 p=多边形 o=线 .=空; 行号=自上而下) 坐标x∈[-${halfW},${halfW}] y∈[-${halfH},${halfH}]\n`
+    + `${gridText}\n`
+    + `元素:\n${list.join('\n')}`;
+}
+
+// 把网格按「可读形式」输出：每行完整展开（如 .........p..........），只裁剪全空行。
+// 故意不做游程压缩——压缩省的是最便宜的输入 token，却让模型在思考中额外
+// 花按输出价计费的 token 去解码，得不偿失；保持可读让模型零负担直接理解。
+function renderGrid(grid: string[][]): string {
+  const out: string[] = [];
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r];
+    if (row.every((c) => c === '.')) continue; // 空行不输出
+    out.push(`${r} ${row.join('')}`);
+  }
+  return out.join('\n');
 }
 
 // 固定提示词（system）：字节级稳定，作为前缀命中 prompt 缓存。
 // 动态内容（existing 摘要、stepHint）必须追加在 user 末尾，不能插进这里。
-// 后端已支持 Python turtle 语法子集：让 AI 用它最熟的 Python turtle 先验写脚本，
-// 由 transpiler 翻译 + 解释器执行；提示词只约束能力边界（禁止递归/容器操作等子集外语法）。
+// 后端已支持 Python turtle 语法子集：让 AI 用它最熟的先验写脚本，transpiler+解释器执行。
+// 保持精简以压低每次请求的 token 成本（system 每次都会携带）。
 function buildFixedSystem(boardWidth: number, boardHeight: number): string {
   const w = Math.round(boardWidth);
   const h = Math.round(boardHeight);
   return (
-    '你是 turtle 画板助手。把用户用自然语言描述的绘画需求翻译成 Python turtle 语法的绘图脚本，脚本会被解析执行。\n'
+    '你是 turtle 画板助手，把自然语言需求翻译成 Python turtle 脚本执行。\n'
     + '\n'
-    + `画布：宽 ${w}px，高 ${h}px。坐标系：原点在画布正中心，+x 向右、+y 向上；`
-    + `朝向角 0°=朝右、90°=朝上、180°=朝左、270°=朝下，逆时针为正（left/lt 增大、right/rt 减小）。`
-    + `内容尽量控制在画布内。\n`
+    + `画布：宽 ${w}px 高 ${h}px。坐标：原点在中心，+x 右、+y 上；`
+    + `朝向 0°=右、90°=上、180°=左、270°=下，逆时针为正（left 增、right 减）。\n`
     + '\n'
-    + '用标准的 Python turtle 写法（后端自动识别并执行）：\n'
+    + '标准写法：\n'
     + '  import turtle\n'
     + '  t = turtle.Turtle()\n'
-    + '  # 用 t.方法() 画图\n'
+    + '  t.forward(50)  # 用 t.方法()\n'
     + '\n'
-    + '可用方法（完整名或短别名均可）：\n'
-    + '  移动: t.forward(n)/fd(n) 前进 / t.backward(n)/bk(n)/back(n) 后退（n 可负=反向）\n'
-    + '  转向: t.left(deg)/lt(deg) 左转(逆时针) / t.right(deg)/rt(deg) 右转(顺时针)\n'
-    + '  画笔: t.penup()/pu()/up() 抬笔 / t.pendown()/pd()/down() 落笔 / t.width(n)/pensize(n) 线宽\n'
-    + '  颜色: t.color(c) 同时设笔色+填充色 / t.color(p, f) 分别设 / t.pencolor(c) / t.fillcolor(c)\n'
-    + '  定位: t.goto(x, y)/setpos(x,y)/setposition(x,y) 移到绝对坐标（不改变朝向）\n'
-    + '        t.setx(x) / t.sety(y) / t.setheading(deg)/seth(deg) / t.home() 回中心朝0°\n'
-    + '  图形: t.circle(r) 或 t.circle(r, extent) 从当前点沿圆周画圆/弧（r 可负） / t.dot(size) 或 t.dot(size, color) 画点\n'
-    + '        t.rect(w, h) 以当前点为左下角画矩形 / t.ellipse(rx, ry) 以当前点为圆心画椭圆 / t.line(x1, y1, x2, y2) 画直线\n'
-    + '  填充: t.begin_fill() ... t.end_fill()（之间画的封闭图形用填充色填充）\n'
-    + '  清空: t.clear() 清空画布已有内容后重画\n'
+    + '方法（别名同样支持）：\n'
+    + '  移动 forward/fd, backward/bk/back\n'
+    + '  转向 left/lt, right/rt\n'
+    + '  画笔 penup/pu/up, pendown/pd/down, width/pensize\n'
+    + '  颜色 color(c) 笔+填充同色, color(p,f) 分开设, pencolor, fillcolor\n'
+    + '  定位 goto/setpos/setposition, setx, sety, setheading/seth, home\n'
+    + '  图形 circle(r[,extent]) 圆/弧, dot(size[,color]) 点, rect(w,h), ellipse(rx,ry), line(x1,y1,x2,y2)\n'
+    + '  填充 begin_fill / end_fill；清空 clear\n'
     + '\n'
-    + '支持的语法（对齐 Python turtle）：\n'
-    + '  循环: for i in range(n): 冒号+4空格缩进；也可 while <条件>:\n'
-    + '  条件: if <条件>: / elif <条件>: / else:\n'
-    + '  变量: size = 20；列表 colors = ["red", "blue"]，取用 colors[i]\n'
-    + '  循环控制: break 提前退出 / continue 跳下一轮\n'
-    + '  逻辑与布尔: and / or / not / True / False（如 if i > 0 and i < 10:）\n'
-    + '  数学函数: sqrt sin cos tan abs floor ceil round pow(a,b) log exp min(a,b) max(a,b) random(a,b) atan2（无需 import）\n'
+    + '语法：for i in range(n): / while 条件: / if 条件: elif 条件: else: / 变量赋值 / '
+    + '列表 colors=["a","b"] 用 colors[i] / break / continue / and or not True False / '
+    + '数学 sqrt sin cos tan abs floor ceil round pow(a,b) log exp min max random atan2\n'
     + '\n'
-    + `颜色：支持 #rrggbb（如 #e74c3c）或 #rgb（如 #e7c），也支持 CSS 颜色名`
-    + `（red green blue black white yellow orange purple pink brown gray grey cyan teal gold silver navy lime magenta skyblue lightblue lightgreen 等，不区分大小写）。\n`
+    + '颜色：#rrggbb、#rgb 或 CSS 色名（red green blue black white yellow orange purple pink '
+    + 'brown gray grey cyan teal gold silver navy lime magenta skyblue lightblue lightgreen 等）。\n'
     + '\n'
-    + '无副作用调用会被自动忽略，可放心写：t.speed()、t.hideturtle()/ht()、t.showturtle()/st()、t.shape()、window/turtle 的 setup()/bgcolor()/title()/done()/mainloop()/exitonclick()/tracer()/update()/write() 等。\n'
+    + '无副作用调用自动忽略可放心写：speed hideturtle/ht showturtle/st shape setup bgcolor title '
+    + 'done mainloop exitonclick tracer update write 等。\n'
     + '\n'
-    + '初始状态：笔在原点 (0,0)，朝 0°（右）。默认落笔（Python turtle 语义），画线无需手动 pendown；不想留线先 t.penup()。\n'
+    + '初始：笔在原点朝0°，默认落笔，移动不留线先 penup。\n'
     + '\n'
-    + '输出格式（必须严格遵守）：\n'
-    + '  响应用 <script>...</script> 包裹 Python turtle 脚本\n'
-    + '  块缩进统一用 4 空格，注释用 # 开头\n'
-    + '  禁止：递归（函数内调用自身）、列表方法（append()/len()）、切片（colors[1:]）、推导式、dict、字符串操作、f-string、print()、import 其它模块（math/random 无需 import）、依赖查询方法返回值（pos()/xcor()/heading() 等）\n'
-    + '  只允许上面列出的方法和语法，禁止自创命令'
+    + '输出：用 <script>...</script> 包裹脚本，缩进4空格，注释 # 开头。\n'
+    + '禁止：递归、append()/len()、切片（colors[1:]）、推导式、dict、f-string、print()、'
+    + 'import 其他模块（math/random 无需 import）、查询 pos()/xcor()/heading() 返回值。\n'
+    + '只允许上述方法语法，禁止自创命令。'
   );
 }
 

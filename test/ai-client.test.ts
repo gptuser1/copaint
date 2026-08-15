@@ -21,7 +21,7 @@ describe('ai turtle prompt', () => {
 
   it('states coordinate system and initial pen state', () => {
     expect(sys).toContain('原点');
-    expect(sys).toContain('+y 向上');
+    expect(sys).toContain('+y 上');
     expect(sys).toContain('pd');
     expect(sys).toContain('pu');
   });
@@ -43,7 +43,7 @@ describe('ai turtle prompt', () => {
   it('exposes python turtle syntax that the backend supports', () => {
     // 后端已支持 Python turtle 子集：提示词要教 AI 用 for/while/变量/列表/数学函数
     for (const allowed of ['for i in range', 'while', 'if ', 'elif', 'else', 'colors[i]',
-      'sqrt', 'sin', 'cos', 'random', 'break', 'continue', 'and / or / not', 'import turtle']) {
+      'sqrt', 'sin', 'cos', 'random', 'break', 'continue', 'and or not', 'import turtle']) {
       expect(sys).toContain(allowed);
     }
   });
@@ -69,9 +69,9 @@ describe('ai turtle prompt', () => {
     // 动态内容只出现在 user 末尾，system 保持固定前缀（不含元素摘要行）
     expect(sys.content).not.toContain('中心(');
     expect(user.content).toContain('existing');
-    expect(user.content).toContain('rect');
-    expect(user.content).toContain('line');
-    expect(user.content).toContain('pen');
+    // 摘要用紧凑缩写 r/l/o + 网格图例（矩形/线），颜色仍保留 #rrggbb
+    expect(user.content).toContain('矩形');
+    expect(user.content).toContain('线');
     expect(user.content).toContain('#e74c3c');
   });
 
