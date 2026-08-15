@@ -7,7 +7,6 @@ import type { BoardElement, BoardState, WsEvent } from '../domain/types';
 export const BOARD_WIDTH = 400;
 export const BOARD_HEIGHT = 300;
 const STATE_KEY = 'state';
-const AI_EPOCH_KEY = 'ai_epoch';
 
 interface ElementInput {
   element: Omit<BoardElement, 'createdAt' | 'id'> & { id?: string };
@@ -56,18 +55,6 @@ export class BoardHub extends DurableObject {
     for (const ws of this.ctx.getWebSockets()) {
       try { ws.send(msg); } catch { /* drop */ }
     }
-  }
-
-  // 读取当前 AI 执行代次（用于取消排队的任务）
-  async getAiEpoch(): Promise<number> {
-    return (await this.ctx.storage.get<number>(AI_EPOCH_KEY)) ?? 0;
-  }
-
-  // 递增 AI 代次：所有更早入队的任务将被判定为已取消
-  async cancelAiTasks(): Promise<number> {
-    const next = (await this.getAiEpoch()) + 1;
-    await this.ctx.storage.put(AI_EPOCH_KEY, next);
-    return next;
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -174,19 +161,7 @@ export class BoardHub extends DurableObject {
       return Response.json({ ok: true, added, deleted, updated });
     }
 
-    // 读取 AI 执行代次
-    if (req.method === 'GET' && path === '/ai/epoch') {
-      return Response.json({ epoch: await this.getAiEpoch() });
-    }
-
-    // 终止当前队列所有 AI 任务
-    if (req.method === 'POST' && path === '/ai/cancel') {
-      const epoch = await this.cancelAiTasks();
-      this.broadcast('ai-log', { event: 'ai-cancelled', epoch, message: 'AI 队列已终止', success: true });
-      return Response.json({ ok: true, epoch });
-    }
-
-    // 广播端点（AI 等跨上下文触发）
+    // 广播端点（供跨上下文触发，如未来 AI 同步扩展）
     if (req.method === 'POST' && path === '/broadcast') {
       const { event, payload } = await req.json() as { event: WsEvent; payload: any };
       this.broadcast(event, payload);

@@ -79,11 +79,71 @@ export interface AiParams {
   thinking?: boolean;
 }
 
-export function runAi(instruction: string, params?: AiParams): Promise<{ ok: boolean }> {
-  return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai`, {
+// 流式 AI 执行事件（后端 SSE 转发 DeepSeek 的 thinking/content 增量）
+export interface AiStreamEvent {
+  type: 'thinking' | 'response' | 'done' | 'error';
+  text?: string;             // thinking / response 增量
+  ok?: boolean;
+  script?: string;           // done：解析出的 turtle 脚本
+  added?: number;            // done：落笔元素数
+  cleared?: boolean;         // done：是否清空过画布
+  raw?: string;              // done：完整正文
+  reasoning?: string;        // done：完整思维链
+  error?: string;            // error：错误信息
+}
+
+// 让 AI 画：流式请求，实时通过 onEvent 回调推送思考与响应增量
+export async function runAiStream(
+  instruction: string,
+  params: AiParams,
+  onEvent: (ev: AiStreamEvent) => void,
+): Promise<void> {
+  const res = await fetch(`/api/boards/${encodeURIComponent(currentBoardId)}/ai`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + currentToken,
+      'Accept': 'text/event-stream',
+    },
     body: JSON.stringify({ instruction, ...params }),
   });
+  if (res.status === 401) {
+    if (unauthorizedHandler) unauthorizedHandler();
+    throw new Error('UNAUTHORIZED');
+  }
+  if (!res.ok || !res.body) {
+    let msg = res.statusText || `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body && typeof body === 'object' && body.error) msg = body.error;
+    } catch { /* 非 JSON */ }
+    throw new Error(msg);
+  }
+  // 解析 SSE：event: <name> \n data: <json> \n\n
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let eventName = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (line.startsWith(':')) continue;               // 注释/心跳
+      if (line.startsWith('event:')) { eventName = line.slice(6).trim(); continue; }
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (!data) continue;
+      let ev: AiStreamEvent;
+      try { ev = JSON.parse(data) as AiStreamEvent; } catch { continue; }
+      ev = { ...ev, type: (eventName || 'message') as AiStreamEvent['type'] };
+      onEvent(ev);
+      eventName = '';
+    }
+  }
 }
 
 // 直接测试：不入队，返回解析后的 turtle 脚本（可预览并可执行到画布）
@@ -92,11 +152,6 @@ export function testAi(instruction: string, params?: AiParams): Promise<{ ok: bo
     method: 'POST',
     body: JSON.stringify({ instruction, ...params }),
   });
-}
-
-// 终止当前队列所有 AI 任务
-export function cancelAi(): Promise<{ ok: boolean; epoch: number }> {
-  return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai/cancel`, { method: 'POST' });
 }
 
 // 换取临时 token（短时效，避免真实 token 出现在 URL 或被转发给 agent）

@@ -45,18 +45,6 @@ export interface BoardState {
   version: number;
 }
 
-// AI 任务（Queues 消息）
-export interface AiJob {
-  boardId: string;
-  instruction: string;
-  // 入队时的 AI 代次；消费时若小于当前代次则视为已取消
-  epoch: number;
-  // LLM 可调参数（前端下发）
-  temperature?: number;
-  maxTokens?: number;
-  thinking?: boolean;
-}
-
 // WebSocket 广播事件类型
 export type WsEvent = 'add' | 'update' | 'delete' | 'clear' | 'ops' | 'ai-log';
 

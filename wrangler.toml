@@ -11,16 +11,6 @@ not_found_handling = "none"
 [secrets]
 required = ["COP_DB_BASE"]
 
-# ── AI 调度队列 ──
-[[queues.producers]]
-binding = "AI_QUEUE"
-queue = "yellow-river"
-
-[[queues.consumers]]
-queue = "yellow-river"
-max_batch_size = 1
-max_retries = 3
-
 # ── WebSocket Durable Object ──
 [[durable_objects.bindings]]
 name = "BOARD_HUB"

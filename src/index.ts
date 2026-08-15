@@ -5,7 +5,6 @@ import { aiApp } from './routes/ai';
 import { configApp } from './routes/config';
 import { mountWs } from './routes/ws';
 import { BoardHub } from './realtime/board-hub';
-import { queueConsumer } from './services/ai';
 import { authMiddleware } from './services/auth';
 import { createTemporaryToken } from './services/token';
 import { AppError } from './domain/errors';
@@ -96,7 +95,6 @@ app.get('/api', (c) => {
 
 export default {
   fetch: app.fetch,
-  queue: queueConsumer,
 };
 
 // Durable Object 类（wrangler.toml 已声明 BoardHub）

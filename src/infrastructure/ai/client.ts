@@ -171,12 +171,18 @@ export function parseTurtleResponse(raw: string): { script: string } {
   return { script };
 }
 
-// 组装可调参数并调用 LLM，返回原始响应文本
+// LLM 原始响应：正文 + 思考内容（reasoning，思考类模型如 DeepSeek-R1 有）
+export interface LlmRaw {
+  content: string;    // 正文（含 <script>…</script>）
+  reasoning: string;  // 思考过程；非思考模型为空串
+}
+
+// 组装可调参数并调用 LLM，返回原始响应（正文 + 思考）
 async function callLLM(
   config: LlmConfig,
   messages: Array<{ role: 'system' | 'user'; content: string }>,
   params?: LlmParams,
-): Promise<string> {
+): Promise<LlmRaw> {
   const body: Record<string, unknown> = {
     model: config.model,
     messages,
@@ -204,8 +210,92 @@ async function callLLM(
     const errBody = await res.text();
     throw new Error(`LLM error ${res.status}: ${errBody.slice(0, 300)}`);
   }
-  const data: { choices?: Array<{ message?: { content?: string } }> } = await res.json();
-  return data?.choices?.[0]?.message?.content || '';
+  const data: { choices?: Array<{ message?: { content?: string; reasoning?: string; reasoning_content?: string } }> } = await res.json();
+  const msg = data?.choices?.[0]?.message || {};
+  return {
+    content: msg.content || '',
+    // 兼容主流思考模型的字段名：DeepSeek 用 reasoning_content，OpenAI 系用 reasoning
+    reasoning: msg.reasoning || msg.reasoning_content || '',
+  };
+}
+
+// 流式分块：thinking 为思维链增量，content 为正文增量
+export interface LlmChunk {
+  type: 'thinking' | 'content';
+  text: string;
+}
+
+// 流式调用 LLM：请求 stream:true，逐块 yield 思维链与正文增量。
+// 供 AI 路由边收边转发给前端 SSE（实时展示思考与响应过程）。
+export async function* streamLLM(
+  config: LlmConfig,
+  messages: Array<{ role: 'system' | 'user'; content: string }>,
+  params?: LlmParams,
+): AsyncGenerator<LlmChunk> {
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages,
+    max_tokens: params?.maxTokens ?? 2048,
+    temperature: params?.temperature ?? 0.7,
+    stream: true,
+  };
+  if (typeof params?.thinking === 'boolean') {
+    body.enable_thinking = params.thinking;
+  }
+  const res = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      // 覆盖 Worker 默认 UA，避免被服务商按来源指纹限流
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`LLM error ${res.status}: ${errBody.slice(0, 300)}`);
+  }
+  if (!res.body) throw new Error('LLM stream empty');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let done = false;
+  while (!done) {
+    const { done: rd, value } = await reader.read();
+    if (rd) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (data === '[DONE]') { done = true; break; }
+      try {
+        const json = JSON.parse(data);
+        const delta: { reasoning_content?: unknown; content?: unknown } = json?.choices?.[0]?.delta || {};
+        if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+          yield { type: 'thinking', text: delta.reasoning_content };
+        }
+        if (typeof delta.content === 'string' && delta.content) {
+          yield { type: 'content', text: delta.content };
+        }
+      } catch { /* 跳过畸形分块 */ }
+    }
+  }
+}
+
+// 把解析出的 turtle 脚本跑成元素（供流式路由在流结束后落笔）
+export function elementsFromTurtleScript(
+  script: string, width: number, height: number,
+): { elements: Partial<BoardElement>[]; cleared: boolean } {
+  const items = runTurtle(script, { startX: width / 2, startY: height / 2, startHeading: 0 });
+  return {
+    elements: turtleToElements(items, { id: `ai_${Date.now().toString(36)}` }),
+    cleared: items.some(isClearItem),
+  };
 }
 
 // 调用 LLM，返回 turtle 脚本（供测试/调试，只取 <script> 部分）
@@ -213,21 +303,24 @@ export async function generateTurtleScript(
   config: LlmConfig,
   input: DrawInput,
   params?: LlmParams,
-): Promise<string> {
+): Promise<{ script: string; raw: string; reasoning: string }> {
   const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint, input.elements);
-  return parseTurtleResponse(await callLLM(config, messages, params)).script;
+  const raw = await callLLM(config, messages, params);
+  return { script: parseTurtleResponse(raw.content).script, raw: raw.content, reasoning: raw.reasoning };
 }
 
 // 调用 LLM 生成 turtle 脚本并落笔成元素（内置 AI 唯一绘制路径）。
-// 返回本步生成的元素 + cleared（脚本含 clear 指令，执行前需先清空画布）。
+// 返回本步生成的元素 + cleared（脚本含 clear 指令，执行前需先清空画布）
+// + 原始响应（raw 正文 / reasoning 思考），供前端展示"思考及原始响应"。
 export async function generateTurtleElements(
   config: LlmConfig,
   input: DrawInput,
   params?: LlmParams,
-): Promise<{ elements: Partial<BoardElement>[]; cleared: boolean }> {
+): Promise<{ elements: Partial<BoardElement>[]; cleared: boolean; script: string; raw: string; reasoning: string }> {
   const messages = buildTurtlePrompt(input.instruction, input.width, input.height, input.stepHint, input.elements);
-  const { script } = parseTurtleResponse(await callLLM(config, messages, params));
-  if (!script.trim()) return { elements: [], cleared: false };
+  const raw = await callLLM(config, messages, params);
+  const { script } = parseTurtleResponse(raw.content);
+  if (!script.trim()) return { elements: [], cleared: false, script: '', raw: raw.content, reasoning: raw.reasoning };
   const items = runTurtle(script, {
     startX: input.width / 2,
     startY: input.height / 2,
@@ -236,5 +329,8 @@ export async function generateTurtleElements(
   return {
     elements: turtleToElements(items, { id: `ai_${Date.now().toString(36)}` }),
     cleared: items.some(isClearItem),
+    script,
+    raw: raw.content,
+    reasoning: raw.reasoning,
   };
 }

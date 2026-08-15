@@ -88,6 +88,14 @@ export function App() {
   const [error, setError] = useState('');
   const [showConfig, setShowConfig] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
+  // 流式展示：AI 思维链与正文（原始响应）
+  const [aiThinking, setAiThinking] = useState('');
+  const [aiResponse, setAiResponse] = useState('');
+  // 可折叠工具栏
+  const [toolbarOpen, setToolbarOpen] = useState(true);
+  // 输出面板收起态
+  const [showThinking, setShowThinking] = useState(true);
+  const [showResponse, setShowResponse] = useState(true);
 
   // 单一固定画板
   const board = { id: 'default', width: BOARD_WIDTH, height: BOARD_HEIGHT };
@@ -248,24 +256,42 @@ export function App() {
     return s.trim() !== '' && Number.isFinite(n) ? n : fallback;
   };
 
+  // 让 AI 画：流式请求，实时追加思维链与正文，done 后填入脚本并刷新画布
   const handleAi = useCallback(async () => {
     const instr = instruction.trim();
     if (!instr) return;
     setAiBusy(true);
     setError('');
+    setAiThinking('');
+    setAiResponse('');
     try {
-      await api.runAi(instr, {
+      await api.runAiStream(instr, {
         temperature: parseNum(temperature, 0.7),
         maxTokens: parseNum(maxTokens, 2048),
         thinking,
+      }, (ev) => {
+        if (ev.type === 'thinking') {
+          setAiThinking((p) => p + (ev.text || ''));
+        } else if (ev.type === 'response') {
+          setAiResponse((p) => p + (ev.text || ''));
+        } else if (ev.type === 'done') {
+          if (ev.script) setTestScript(ev.script);
+          addLog({
+            message: `🤖 AI 完成，生成 ${ev.added ?? 0} 个元素${ev.cleared ? '（已清空画布）' : ''}`,
+            success: true,
+          });
+          setInstruction('');
+          api.getBoard().then((s) => setElements(s.elements)).catch(() => {});
+        } else if (ev.type === 'error') {
+          setError(ev.error || 'AI 出错');
+        }
       });
-      setInstruction('');
     } catch (e) {
-      setError(String(e.message || e));
+      setError(String((e as Error).message || e));
     } finally {
       setAiBusy(false);
     }
-  }, [instruction, temperature, maxTokens, thinking]);
+  }, [instruction, temperature, maxTokens, thinking, addLog]);
 
   const handleExport = useCallback(async () => {
     try {
@@ -318,17 +344,6 @@ export function App() {
     }
   }, [testScript, addLog]);
 
-  // 终止当前队列所有 AI 任务
-  const handleCancelAi = useCallback(async () => {
-    setError('');
-    try {
-      const res = await api.cancelAi();
-      addLog({ message: `⏹ 已终止 AI 队列（epoch=${res.epoch}），排队的旧任务将被跳过`, success: true });
-    } catch (e) {
-      setError(String((e as Error).message || e));
-    }
-  }, [addLog]);
-
   const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer', background: 'var(--btn-bg)', color: 'var(--text)', border: '1px solid var(--border)' };
 
   // 未登录：令牌输入界面
@@ -358,25 +373,32 @@ export function App() {
     <div style={{ padding: 16, fontFamily: 'system-ui, sans-serif' }}>
       <h2 style={{ marginTop: 0 }}>🖌️ CoPaint</h2>
 
-      {/* 工具栏 */}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
-        <button onClick={toggleTheme} style={btnStyle}>{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
-        {TOOLS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTool(t.id)}
-            style={{ ...btnStyle, background: tool === t.id ? 'var(--btn-active)' : 'var(--btn-bg)' }}
-          >
-            {t.label}
-          </button>
-        ))}
-        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="颜色" style={{ width: 34, height: 30, padding: 0, border: 'none' }} />
-        <input type="number" min={1} max={30} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} title="粗细" style={{ width: 56 }} />
-        <button onClick={handleUndo} style={btnStyle}>↩ 撤销</button>
-        <button onClick={handleClear} style={btnStyle}>🗑 清空</button>
-        <button onClick={handleExport} style={btnStyle}>⬇ 导出 PNG</button>
-        <button onClick={() => setShowConfig((s) => !s)} style={btnStyle}>⚙ 配置</button>
-        <button onClick={handleLogout} style={btnStyle}>退出</button>
+      {/* 工具栏（可折叠，减少占用空间） */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <button onClick={() => setToolbarOpen((o) => !o)} style={btnStyle} title="收起/展开工具栏">
+          {toolbarOpen ? '▾ 工具栏' : '▸ 工具栏'}
+        </button>
+        {toolbarOpen && (
+          <>
+            <button onClick={toggleTheme} style={btnStyle}>{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
+            {TOOLS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTool(t.id)}
+                style={{ ...btnStyle, background: tool === t.id ? 'var(--btn-active)' : 'var(--btn-bg)' }}
+              >
+                {t.label}
+              </button>
+            ))}
+            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="颜色" style={{ width: 34, height: 30, padding: 0, border: 'none' }} />
+            <input type="number" min={1} max={30} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} title="粗细" style={{ width: 56 }} />
+            <button onClick={handleUndo} style={btnStyle}>↩ 撤销</button>
+            <button onClick={handleClear} style={btnStyle}>🗑 清空</button>
+            <button onClick={handleExport} style={btnStyle}>⬇ 导出 PNG</button>
+            <button onClick={() => setShowConfig((s) => !s)} style={btnStyle}>⚙ 配置</button>
+            <button onClick={handleLogout} style={btnStyle}>退出</button>
+          </>
+        )}
       </div>
 
       {/* 当前画板信息 */}
@@ -402,40 +424,77 @@ export function App() {
         theme={theme}
       />
 
-      {/* AI 指令 */}
-      <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
+      {/* AI 指令（textarea）+ 相关按钮 */}
+      <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🤖 AI 指令</div>
+        <textarea
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleAi(); }}
-          placeholder="输入指令，如：画一个红色的太阳在左上角"
-          style={{ flex: 1, minWidth: 280, padding: 6 }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAi(); }}
+          placeholder={'描述你想让 AI 画的内容，Ctrl/Cmd+Enter 提交。\n例如：画一个红色的太阳在左上角，下方有一片绿色草地'}
+          spellCheck={false}
+          style={{
+            width: '100%', boxSizing: 'border-box', minHeight: 56, resize: 'vertical',
+            padding: 6, fontFamily: 'inherit', fontSize: 13, lineHeight: 1.5,
+          }}
         />
-        <button onClick={handleAi} disabled={aiBusy} style={{ ...btnStyle, background: aiBusy ? 'var(--btn-bg)' : '#4caf50', color: aiBusy ? 'var(--muted)' : '#fff' }}>
-          {aiBusy ? '处理中…' : '🤖 让 AI 画'}
-        </button>
-        <button onClick={handleTestAi} disabled={aiBusy} style={{ ...btnStyle, background: aiBusy ? 'var(--btn-bg)' : '#4c1d95', color: aiBusy ? 'var(--muted)' : '#e9d5ff' }}>
-          {aiBusy ? '处理中…' : '🔬 测试 AI'}
-        </button>
-        <button onClick={handleCancelAi} style={{ ...btnStyle, background: '#7f1d1d', color: '#fecaca', border: '1px solid #f87171' }}>⏹ 终止 AI 任务</button>
-        <button onClick={() => setAiLogs([])} style={btnStyle}>清空日志</button>
+        <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button onClick={handleAi} disabled={aiBusy} style={{ ...btnStyle, background: aiBusy ? 'var(--btn-bg)' : '#4caf50', color: aiBusy ? 'var(--muted)' : '#fff' }}>
+            {aiBusy ? '生成中…' : '🤖 让 AI 画'}
+          </button>
+          <button onClick={handleTestAi} disabled={aiBusy} style={{ ...btnStyle, background: aiBusy ? 'var(--btn-bg)' : '#4c1d95', color: aiBusy ? 'var(--muted)' : '#e9d5ff' }}>
+            {aiBusy ? '生成中…' : '🔬 测试 AI'}
+          </button>
+          <button onClick={() => setAiLogs([])} style={btnStyle}>清空日志</button>
+        </div>
+        {/* LLM 可调参数 */}
+        <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: 'var(--muted)' }}>
+          <label title="随机性，0-2，越高越发散">
+            温度
+            <input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(e) => setTemperature(e.target.value)} style={{ width: 60, marginLeft: 4, padding: 4 }} />
+          </label>
+          <label title="最大回复 token 数">
+            max_tokens
+            <input type="number" min={64} max={8192} step={64} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} style={{ width: 80, marginLeft: 4, padding: 4 }} />
+          </label>
+          <label title="深度思考开关，仅思考类模型生效">
+            <input type="checkbox" checked={thinking} onChange={(e) => setThinking(e.target.checked)} style={{ marginRight: 4 }} />
+            深度思考
+          </label>
+        </div>
       </div>
 
-      {/* LLM 可调参数 */}
-      <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: 'var(--muted)' }}>
-        <label title="随机性，0-2，越高越发散">
-          温度
-          <input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(e) => setTemperature(e.target.value)} style={{ width: 60, marginLeft: 4, padding: 4 }} />
-        </label>
-        <label title="最大回复 token 数">
-          max_tokens
-          <input type="number" min={64} max={8192} step={64} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} style={{ width: 80, marginLeft: 4, padding: 4 }} />
-        </label>
-        <label title="深度思考开关，仅思考类模型生效">
-          <input type="checkbox" checked={thinking} onChange={(e) => setThinking(e.target.checked)} style={{ marginRight: 4 }} />
-          深度思考
-        </label>
-      </div>
+      {/* AI 思考 + 原始响应（流式展示，开启思考或有输出时显示） */}
+      {(aiThinking || aiResponse) && (
+        <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
+          {aiThinking && (
+            <div style={{ marginBottom: aiResponse ? 10 : 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>🧠 AI 思考过程</span>
+                <button onClick={() => setShowThinking((s) => !s)} style={btnStyle}>{showThinking ? '收起' : '展开'}</button>
+              </div>
+              {showThinking && (
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.6, background: '#0f1117', color: '#9ecbff', padding: 8, borderRadius: 4, maxHeight: 200, overflowY: 'auto' }}>
+                  {aiThinking || '思考中…'}
+                </pre>
+              )}
+            </div>
+          )}
+          {aiResponse && (
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>📄 原始响应</span>
+                <button onClick={() => setShowResponse((s) => !s)} style={btnStyle}>{showResponse ? '收起' : '展开'}</button>
+              </div>
+              {showResponse && (
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.6, background: '#0f1117', color: '#d6d6d6', padding: 8, borderRadius: 4, maxHeight: 200, overflowY: 'auto' }}>
+                  {aiResponse || '…'}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* turtle 脚本输入/预览：可粘贴或编辑脚本，选择执行到画布；测试 AI 的结果也会填入此处 */}
       <div style={{ marginTop: 12, border: '1px solid #4c1d95', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
