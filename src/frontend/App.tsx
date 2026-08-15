@@ -117,6 +117,8 @@ export function App() {
   const [temperature, setTemperature] = useState('0.7');
   const [maxTokens, setMaxTokens] = useState('2048');
   const [thinking, setThinking] = useState(true);
+  // 思维链 token 上限（thinking_budget），空串 = 不限制
+  const [thinkingBudget, setThinkingBudget] = useState('2000');
   const [aiBusy, setAiBusy] = useState(false);
   const [error, setError] = useState('');
   const [showConfig, setShowConfig] = useState(false);
@@ -304,6 +306,7 @@ export function App() {
         temperature: parseNum(temperature, 0.7),
         maxTokens: parseNum(maxTokens, 2048),
         thinking,
+        thinkingBudget: thinkingBudget.trim() === '' ? undefined : parseNum(thinkingBudget, 2000),
       }, (ev) => {
         if (ev.type === 'thinking') {
           setAiThinking((p) => p + (ev.text || ''));
@@ -326,7 +329,7 @@ export function App() {
     } finally {
       setAiBusy(false);
     }
-  }, [instruction, temperature, maxTokens, thinking, addLog]);
+  }, [instruction, temperature, maxTokens, thinking, thinkingBudget, addLog]);
 
   const handleExport = useCallback(async () => {
     try {
@@ -350,6 +353,7 @@ export function App() {
         temperature: parseNum(temperature, 0.7),
         maxTokens: parseNum(maxTokens, 2048),
         thinking,
+        thinkingBudget: thinkingBudget.trim() === '' ? undefined : parseNum(thinkingBudget, 2000),
         apply: false,
       }, (ev) => {
         if (ev.type === 'thinking') {
@@ -369,7 +373,7 @@ export function App() {
     } finally {
       setAiBusy(false);
     }
-  }, [instruction, addLog, temperature, maxTokens, thinking]);
+  }, [instruction, addLog, temperature, maxTokens, thinking, thinkingBudget]);
 
   // 执行测试生成的脚本到画布（与"让 AI 画"同样走 /turtle 落笔）
   const handleApplyTest = useCallback(async () => {
@@ -505,6 +509,16 @@ export function App() {
           <label title="深度思考开关，仅思考类模型生效">
             <input type="checkbox" checked={thinking} onChange={(e) => setThinking(e.target.checked)} style={{ marginRight: 4 }} />
             深度思考
+          </label>
+          <label title="思维链 token 上限（thinking_budget，128-32768），留空不限制">
+            思考上限
+            <input
+              type="number" min={128} max={32768} step={128}
+              value={thinkingBudget}
+              onChange={(e) => setThinkingBudget(e.target.value)}
+              placeholder="不限制"
+              style={{ width: 80, marginLeft: 4, padding: 4 }}
+            />
           </label>
         </div>
       </div>

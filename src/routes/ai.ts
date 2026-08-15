@@ -31,6 +31,10 @@ aiApp.post('/:id/ai', async (c) => {
   const temperature = Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : undefined;
   const maxTokens = Number.isFinite(Number(body.maxTokens)) ? Number(body.maxTokens) : undefined;
   const thinking = typeof body.thinking === 'boolean' ? body.thinking : undefined;
+  // 思维链 token 上限（thinking_budget，128-32768），0 视为不限制
+  const thinkingBudget = Number.isFinite(Number(body.thinkingBudget)) && Number(body.thinkingBudget) >= 128
+    ? Math.min(Number(body.thinkingBudget), 32768)
+    : undefined;
   // 是否落笔到画布：默认落笔；测试模式传 apply:false 只出脚本（含思考/原始响应）
   const apply = body.apply !== false;
 
@@ -59,7 +63,7 @@ aiApp.post('/:id/ai', async (c) => {
     let content = '';
     let reasoning = '';
     try {
-      for await (const chunk of streamLLM(config, messages, { temperature, maxTokens, thinking })) {
+      for await (const chunk of streamLLM(config, messages, { temperature, maxTokens, thinking, thinkingBudget })) {
         if (chunk.type === 'thinking') {
           reasoning += chunk.text;
           await stream.writeSSE({ event: 'thinking', data: JSON.stringify({ text: chunk.text }) });

@@ -77,6 +77,8 @@ export interface AiParams {
   temperature?: number;
   maxTokens?: number;
   thinking?: boolean;
+  // 思维链 token 上限（thinking_budget，128-32768），0 不限制
+  thinkingBudget?: number;
   // 是否落笔到画布：false 为测试模式，只出脚本不落笔
   apply?: boolean;
 }

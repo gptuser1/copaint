@@ -23,6 +23,8 @@ export interface LlmParams {
   maxTokens?: number;
   // 深度思考开关（enable_thinking），仅思考类模型支持
   thinking?: boolean;
+  // 思维链 token 上限（thinking_budget，128-32768），限制思考过长/超时
+  thinkingBudget?: number;
 }
 
 // 把画布已有元素转成「声明式坐标摘要」，注入提示词让无多模态 LLM
@@ -247,6 +249,10 @@ async function callLLM(
   if (typeof params?.thinking === 'boolean') {
     body.enable_thinking = params.thinking;
   }
+  // 思维链 token 上限：限制思考模型过度推理导致的超时/截断
+  if (typeof params?.thinkingBudget === 'number') {
+    body.thinking_budget = params.thinkingBudget;
+  }
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -293,6 +299,10 @@ export async function* streamLLM(
   };
   if (typeof params?.thinking === 'boolean') {
     body.enable_thinking = params.thinking;
+  }
+  // 思维链 token 上限：限制思考模型过度推理导致的超时/截断
+  if (typeof params?.thinkingBudget === 'number') {
+    body.thinking_budget = params.thinkingBudget;
   }
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
