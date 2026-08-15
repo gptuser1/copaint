@@ -104,4 +104,29 @@ describe('parseTurtleResponse', () => {
   it('handles code fence fallback', () => {
     expect(parseTurtleResponse('```turtle\npd fd 50\n```').script).toBe('pd fd 50');
   });
+
+  it('strips prose preface before the script', () => {
+    const r = parseTurtleResponse('好的，我会在已有小房子的屋顶上方添加一个烟囱。\n\nimport turtle\nt = turtle.Turtle()\nfd 50');
+    expect(r.script).toBe('import turtle\nt = turtle.Turtle()\nfd 50');
+  });
+
+  it('handles prose + python fence + nested script tag', () => {
+    const r = parseTurtleResponse('好的，我来画。\n\n```python\n<script>\nt.penup()\nt.forward(30)\n</script>\n```');
+    expect(r.script).toBe('t.penup()\nt.forward(30)');
+  });
+
+  it('handles python fence without script tag', () => {
+    const r = parseTurtleResponse('```python\nt.color("red")\nt.circle(40)\n```');
+    expect(r.script).toBe('t.color("red")\nt.circle(40)');
+  });
+
+  it('handles unclosed script (truncated response)', () => {
+    const r = parseTurtleResponse('好的，我在加烟囱。\n\n<script>\nt.pen');
+    expect(r.script).toBe('t.pen');
+  });
+
+  it('returns empty for prose-only response without script', () => {
+    const r = parseTurtleResponse('好的，我会在屋顶上方添加一个烟囱。');
+    expect(r.script).toBe('');
+  });
 });

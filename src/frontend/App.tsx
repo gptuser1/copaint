@@ -70,6 +70,39 @@ interface AiLog {
   error?: string;
 }
 
+// 通用按钮样式
+const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer', background: 'var(--btn-bg)', color: 'var(--text)', border: '1px solid var(--border)' };
+
+// 等宽代码展示样式（思考/原始响应/脚本等）
+const monoStyle: React.CSSProperties = {
+  margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  fontSize: 12, lineHeight: 1.6, background: '#0f1117', color: '#d6d6d6',
+  padding: 8, borderRadius: 4, maxHeight: 200, overflowY: 'auto',
+};
+
+// 可折叠内容区块：标题栏 + 折叠按钮 + 可选附加操作（右侧）
+function CollapsibleSection({
+  title, open, onToggle, actions, children,
+}: {
+  title: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ flex: 1 }}>{title}</span>
+        {actions}
+        <button onClick={onToggle} style={btnStyle} title="收起/展开">{open ? '▾ 收起' : '▸ 展开'}</button>
+      </div>
+      {open && <div style={{ marginTop: 8 }}>{children}</div>}
+    </div>
+  );
+}
+
 export function App() {
   const [theme, toggleTheme] = useTheme();
   const [authed, setAuthed] = useState(false);
@@ -96,6 +129,8 @@ export function App() {
   // 输出面板收起态
   const [showThinking, setShowThinking] = useState(true);
   const [showResponse, setShowResponse] = useState(true);
+  const [showScript, setShowScript] = useState(true);
+  const [showLog, setShowLog] = useState(true);
 
   // 单一固定画板
   const board = { id: 'default', width: BOARD_WIDTH, height: BOARD_HEIGHT };
@@ -344,8 +379,6 @@ export function App() {
     }
   }, [testScript, addLog]);
 
-  const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer', background: 'var(--btn-bg)', color: 'var(--text)', border: '1px solid var(--border)' };
-
   // 未登录：令牌输入界面
   if (!authed) {
     return (
@@ -464,47 +497,43 @@ export function App() {
         </div>
       </div>
 
-      {/* AI 思考 + 原始响应（流式展示，开启思考或有输出时显示） */}
-      {(aiThinking || aiResponse) && (
-        <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
-          {aiThinking && (
-            <div style={{ marginBottom: aiResponse ? 10 : 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>🧠 AI 思考过程</span>
-                <button onClick={() => setShowThinking((s) => !s)} style={btnStyle}>{showThinking ? '收起' : '展开'}</button>
-              </div>
-              {showThinking && (
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.6, background: '#0f1117', color: '#9ecbff', padding: 8, borderRadius: 4, maxHeight: 200, overflowY: 'auto' }}>
-                  {aiThinking || '思考中…'}
-                </pre>
-              )}
-            </div>
-          )}
-          {aiResponse && (
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>📄 原始响应</span>
-                <button onClick={() => setShowResponse((s) => !s)} style={btnStyle}>{showResponse ? '收起' : '展开'}</button>
-              </div>
-              {showResponse && (
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.6, background: '#0f1117', color: '#d6d6d6', padding: 8, borderRadius: 4, maxHeight: 200, overflowY: 'auto' }}>
-                  {aiResponse || '…'}
-                </pre>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      {/* AI 思考过程（常驻，可折叠） */}
+      <CollapsibleSection
+        title="🧠 AI 思考过程"
+        open={showThinking}
+        onToggle={() => setShowThinking((s) => !s)}
+        actions={aiBusy && <span style={{ fontSize: 12, color: 'var(--muted)' }}>生成中…</span>}
+      >
+        <pre style={{ ...monoStyle, color: '#9ecbff' }}>
+          {aiThinking || '暂无思考内容。开启「深度思考」后，AI 的思维链会实时显示在这里。'}
+        </pre>
+      </CollapsibleSection>
+
+      {/* 原始响应（常驻，可折叠） */}
+      <CollapsibleSection
+        title="📄 原始响应"
+        open={showResponse}
+        onToggle={() => setShowResponse((s) => !s)}
+      >
+        <pre style={monoStyle}>
+          {aiResponse || '暂无内容。AI 的原始回文字段会实时显示在这里。'}
+        </pre>
+      </CollapsibleSection>
 
       {/* turtle 脚本输入/预览：可粘贴或编辑脚本，选择执行到画布；测试 AI 的结果也会填入此处 */}
-      <div style={{ marginTop: 12, border: '1px solid #4c1d95', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span>🐢 turtle 脚本</span>
-          <button onClick={handleApplyTest} disabled={aiBusy} style={{ ...btnStyle, background: '#4c1d95', color: '#e9d5ff' }}>
-            {aiBusy ? '执行中…' : '▶ 执行到画布'}
-          </button>
-          <button onClick={() => setTestScript('')} style={btnStyle}>清空</button>
-        </div>
+      <CollapsibleSection
+        title="🐢 turtle 脚本"
+        open={showScript}
+        onToggle={() => setShowScript((s) => !s)}
+        actions={
+          <>
+            <button onClick={handleApplyTest} disabled={aiBusy} style={{ ...btnStyle, background: '#4c1d95', color: '#e9d5ff' }}>
+              {aiBusy ? '执行中…' : '▶ 执行到画布'}
+            </button>
+            <button onClick={() => setTestScript('')} style={btnStyle}>清空</button>
+          </>
+        }
+      >
         <textarea
           value={testScript}
           onChange={(e) => setTestScript(e.target.value)}
@@ -530,11 +559,14 @@ export function App() {
             border: '1px solid var(--border)',
           }}
         />
-      </div>
+      </CollapsibleSection>
 
-      {/* AI 执行日志 */}
-      <div style={{ marginTop: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🤖 AI 执行日志</div>
+      {/* AI 执行日志（常驻，可折叠） */}
+      <CollapsibleSection
+        title="🤖 AI 执行日志"
+        open={showLog}
+        onToggle={() => setShowLog((s) => !s)}
+      >
         <div
           ref={logBoxRef}
           style={{
@@ -561,7 +593,7 @@ export function App() {
             </div>
           ))}
         </div>
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }

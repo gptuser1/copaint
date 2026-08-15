@@ -159,16 +159,66 @@ export function buildTurtlePrompt(
   ];
 }
 
-// 解析 LLM 响应：<script> 包裹的 turtle 脚本。
-// 无 <script> 时把整体当脚本，并兼容 ``` 代码块围栏（单次/旧响应兜底）。
+// LLM 响应里 turtle 脚本的起始行特征（用于剥离"好的，我会…"这类前言说明文字）。
+// 覆盖标准开头 import / t = turtle.Turtle() / t.xxx，以及以任一 turtle 指令/赋值/注释开头。
+const SCRIPT_START =
+  /^(import\b|t\s*=|t\.|turtle\.|[a-zA-Z_]\w*\s*=|for\s+\w+\s+in\s+range|while\b|if\s|#|(?:fd|bd|bk|back|forward|backward|lt|left|rt|right|pu|up|penup|pd|down|pendown|width|pensize|color|pencolor|fillcolor|goto|setpos|setposition|setx|sety|seth|setheading|home|circle|dot|rect|ellipse|line|begin_fill|end_fill|fill|clear|speed|hideturtle|ht|showturtle|st|shape|bgcolor|title|mainloop|done|exitonclick|tracer|update|write)\b)/;
+
+// 鲁棒解析 LLM 响应里的 turtle 脚本。模型可能用它最顺手的方式包裹脚本：
+//   1. <script>…</script>                    （系统提示词要求的标准格式）
+//   2. ```python / ```turtle / ``` code fence（业界常见的 markdown 格式）
+//   3. 单反引号 `…`
+//   4. 无任何包裹，直接输出脚本
+// 且前面常带一句说明（如"好的，我会在屋顶上方添加烟囱"）。这里按优先级依次尝试
+// 多种匹配模式，命中即返回；同时剥离 <script>/代码块围栏与前缀说明文字，提高鲁棒性。
 export function parseTurtleResponse(raw: string): { script: string } {
-  const scriptM = raw.match(/<script>([\s\S]*?)<\/script>/i);
-  let script = scriptM ? scriptM[1].trim() : raw.trim();
-  if (!scriptM) {
-    const fence = script.match(/```(?:turtle|python)?\n?([\s\S]*?)```/);
-    if (fence) script = fence[1].trim();
+  return { script: extractScript(raw) };
+}
+
+function extractScript(raw: string): string {
+  const text = raw.trim();
+  if (!text) return '';
+  const candidates: string[] = [];
+
+  // 1) <script> 完整标签（可能被 markdown 围栏再包一层）
+  const closed = text.match(/<script[^>]*>([\s\S]*?)<\/script\s*>/i);
+  if (closed) candidates.push(closed[1]);
+  // 2) 未闭合的 <script>（响应被截断时）：取标签后到结尾
+  else {
+    const open = text.match(/<script[^>]*>([\s\S]*)$/i);
+    if (open) candidates.push(open[1]);
   }
-  return { script };
+  // 3) 三反引号代码块（任意语言标注；未闭合时也尽量取到结尾）
+  const fence = text.match(/```(?:[a-zA-Z0-9]*)?\s*\n?([\s\S]*?)(?:```|$)/);
+  if (fence) candidates.push(fence[1]);
+  // 4) 单反引号
+  const inline = text.match(/`([\s\S]*?)`/);
+  if (inline) candidates.push(inline[1]);
+  // 5) 整体兜底
+  candidates.push(text);
+
+  for (const c of candidates) {
+    const s = cleanScript(c);
+    if (s) return s;
+  }
+  return '';
+}
+
+// 清理候选：剥除 <script> 标签与代码块围栏，去掉前言说明文字。
+// 找不到脚本起始行时返回空（纯说明文字，不是有效脚本）
+function cleanScript(s: string): string {
+  const out = s
+    .replace(/<\/?script[^>]*>/gi, ' ')
+    .replace(/```[a-zA-Z0-9]*/gi, '')
+    .trim();
+  if (!out) return '';
+  const lines = out.split('\n');
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (SCRIPT_START.test(lines[i].trim())) { start = i; break; }
+  }
+  if (start < 0) return '';
+  return lines.slice(start).join('\n').trim();
 }
 
 // LLM 原始响应：正文 + 思考内容（reasoning，思考类模型如 DeepSeek-R1 有）
