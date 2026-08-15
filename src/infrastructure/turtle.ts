@@ -43,7 +43,8 @@ export interface TurtleOptions {
   startX: number; // 画布中心 x（逻辑原点映射到的画布坐标）
   startY: number; // 画布中心 y
   startHeading?: number; // 度，0=朝右(+x)
-  maxOps?: number;       // 解释器步数上限，防止死循环
+  maxOps?: number;       // 解释器步数粗上限，防止廉价 op 的死循环
+  maxMs?: number;        // 墙钟时间硬上限(ms)，直接对齐运行时 CPU 限制（默认 7）
 }
 
 const COLOR_NAMES: Record<string, string> = {
@@ -452,7 +453,9 @@ function parse(tokens: Token[]): Stmt[] {
 
 export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   const startHeading = opts.startHeading ?? 0;
-  const maxOps = opts.maxOps ?? 8000;
+  const maxOps = opts.maxOps ?? 20000;
+  const maxMs = opts.maxMs ?? 7;
+  const t0 = performance.now();
 
   // 内部用标准 turtle 逻辑坐标：原点在画布中心，+y 向上，heading 0°=右、逆时针为正
   let x = 0;
@@ -483,6 +486,8 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   }
 
   function vertex() {
+    if (aborted) return;
+    if (++ops > maxOps) { aborted = true; return; }
     if (!cur) cur = { points: [], widths: [], colors: [] };
     cur.points.push(Number(toCanvasX(x).toFixed(1)), Number(toCanvasY(y).toFixed(1)));
     cur.widths.push(width);
@@ -525,6 +530,7 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
       if (filling) {
         if (fillPoints.length === 0) fillPoints.push(toCanvasX(x), toCanvasY(y));
         x = nx; y = ny;
+        if (++ops > maxOps) { aborted = true; return; }
         fillPoints.push(toCanvasX(x), toCanvasY(y));
       } else {
         if (!cur || cur.points.length === 0) vertex();
@@ -538,10 +544,12 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
 
   function gotoAbs(gx: number, gy: number) {
     if (!Number.isFinite(gx) || !Number.isFinite(gy)) return;
+    if (aborted) return;
     if (penDown) {
       if (filling) {
         if (fillPoints.length === 0) fillPoints.push(toCanvasX(x), toCanvasY(y));
         x = gx; y = gy;
+        if (++ops > maxOps) { aborted = true; return; }
         fillPoints.push(toCanvasX(x), toCanvasY(y));
       } else {
         if (!cur || cur.points.length === 0) vertex();
@@ -564,13 +572,14 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     const cy = y + r * Math.cos(rad);
     // 起点即当前点，其相对圆心的角度（标准 turtle 从"底点"开始）
     const startAng = Math.atan2(y - cy, x - cx);
+    // steps 有上限：防止单条 circle 命令一次性生成海量点（也防超 CPU 限制）
     const n = steps && steps >= 3
-      ? Math.round(steps)
+      ? Math.min(Math.round(steps), 360)
       : Math.max(4, Math.round(Math.min(Math.abs(extent), 360) / 4));
     // 每步弧角：r>0 逆时针（正向）、r<0 顺时针（反向）；extent 决定总角度
     const per = (extent * Math.PI / (180 * n)) * (r < 0 ? -1 : 1);
     // 尊重画笔状态：pd 才画线，pu 只移动（对齐标准 turtle）
-    for (let k = 1; k <= n && ops <= maxOps; k++) {
+    for (let k = 1; k <= n && !aborted && ops <= maxOps; k++) {
       const a = startAng + per * k;
       gotoAbs(cx + r * Math.cos(a), cy + r * Math.sin(a));
     }
@@ -583,10 +592,12 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     const c = col ? parseColor(col) : color;
     const n = 24;
     const pts: number[] = [];
-    for (let k = 0; k < n; k++) {
+    for (let k = 0; k < n && !aborted && ops <= maxOps; k++) {
+      if (++ops > maxOps) { aborted = true; break; }
       const a = (k / n) * Math.PI * 2;
       pts.push(Number(toCanvasX(x + r * Math.cos(a)).toFixed(1)), Number(toCanvasY(y + r * Math.sin(a)).toFixed(1)));
     }
+    if (aborted) return;
     pts.push(pts[0], pts[1]);
     items.push({ points: pts, fill: c, color: c, strokeWidth: 0 });
   }
@@ -684,6 +695,10 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     }
     const fn = funcs[name];
     if (!fn) return 0;
+    // 递归深度守卫：防止深递归/无限递归（也控制 CPU 时间）
+    if (varStack.length > 64) return 0;
+    // 每次函数调用计入 ops：直接限制递归调用总量（fib 类指数递归的关键闸门）
+    if (++ops > maxOps) { aborted = true; return 0; }
     varStack.push({});
     fn.params.forEach((p, k) => { varStack[varStack.length - 1][p] = args[k] ?? 0; });
     try {
@@ -878,6 +893,9 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     for (const s of stmts) {
       if (aborted) break;
       if (++ops > maxOps) { aborted = true; break; }
+      // 墙钟硬上限：op 单价因 op 类型/运行时/机器而异，CPU 时间才是 CF 10ms 限制的直接约束。
+      // 每 1024 op 检查一次（performance.now 有开销，不必每 op 查）；覆盖嵌套 exec（函数体/循环体）。
+      if ((ops & 1023) === 0 && performance.now() - t0 > maxMs) { aborted = true; break; }
       switch (s.kind) {
         case 'cmd': execCmd(s.name, s.args); break;
         case 'assign': setVar(s.name, evalExpr(s.value)); break;
