@@ -319,6 +319,9 @@ function parse(tokens: Token[]): Stmt[] {
       // 命令参数后紧跟 `ident =` 是赋值语句，不是命令参数，立即停止
       if (t.type === 'ident' && (!COMMANDS.has(t.value)) && tokens[pos.i + 1]?.type === 'op' && tokens[pos.i + 1].value === '=') break;
       if (t.type === 'ident' && COMMANDS.has(t.value)) break;
+      // 已消费过参数后又遇到 函数调用形态（ident 紧跟 `(`）：
+      // 这是下一个独立命令（如 `rt 60 draw(n-1)`），不是当前命令的延续参数
+      if (args.length > 0 && t.type === 'ident' && tokens[pos.i + 1]?.type === 'op' && tokens[pos.i + 1].value === '(') break;
       const start = pos.i;
       term();
       args.push(tokens.slice(start, pos.i));
@@ -782,7 +785,7 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     switch (name) {
       case 'fd': case 'forward': move(n(0)); break;
       case 'bk': case 'back': move(-n(0)); break;
-      case 'lt': case 'left': heading += n(0); break; // 左转=逆时针（y 向上时 heading 增大）
+      case 'lt': case 'left': heading += n(0); break;
       case 'rt': case 'right': heading -= n(0); break; // 右转=顺时针
       case 'pu': case 'penup': case 'up': flush(); penDown = false; break;
       case 'pd': case 'pendown': case 'down': penDown = true; break;

@@ -46,6 +46,7 @@ const DROP_METHODS = new Set<string>([
   'onkeypress', 'onscreenclick', 'onclick', 'undo', 'stamp', 'clone',
   'position', 'pos', 'heading', 'isdown', 'isvisible', 'pen', 'xcor', 'ycor',
   'distance', 'towards', 'getpen', 'getturtle', 'setundobuffer', 'write',
+  'setup', 'colormode', 'mode', 'canvas', 'setframerate',
 ]);
 
 interface LineInfo {
@@ -195,7 +196,9 @@ function translateLine(raw: string): LineInfo {
     const params = splitArgs(m[2]).join(', ');
     return { indent: realIndent, kind: 'def', text: `to ${m[1]}(${params})` };
   }
-  return { indent: realIndent, kind: 'stmt', text: translateCalls(content) };
+  const stmt = translateCalls(content);
+  if (!stmt) return { indent: realIndent, kind: 'drop', text: '' };
+  return { indent: realIndent, kind: 'stmt', text: stmt };
 }
 
 function buildTurtle(lines: LineInfo[]): string {

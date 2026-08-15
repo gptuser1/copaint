@@ -704,4 +704,164 @@ window.mainloop()`,
     expect(fills.some((f) => f.fill === '#ffd700')).toBe(true);
     expect(fills.some((f) => f.fill === '#87ceeb')).toBe(true);
   });
+
+  it('maps position aliases setpos/setposition and home', () => {
+    const out = pythonToTurtle(`t = turtle.Turtle()
+t.setpos(100, -50)
+t.setposition(-100, 50)
+t.home()`);
+    expect(out).toContain('goto 100, -50');
+    expect(out).toContain('goto -100, 50');
+    expect(out).toContain('home');
+  });
+
+  it('maps pen aliases up/down, width/pensize, seth/setheading', () => {
+    const out = pythonToTurtle(`t = turtle.Turtle()
+t.up()
+t.goto(10, 10)
+t.down()
+t.pensize(4)
+t.seth(90)
+t.setheading(180)`);
+    expect(out).toContain('pu');
+    expect(out).toContain('pd');
+    expect(out).toContain('width 4');
+    // seth 与 setheading 都映射到 setheading
+    expect(out).toContain('setheading 90');
+    expect(out).toContain('setheading 180');
+  });
+
+  it('maps movement aliases back/bk and turn lt/rt', () => {
+    const out = pythonToTurtle(`t = turtle.Turtle()
+t.back(30)
+t.bk(10)
+t.lt(45)
+t.rt(15)`);
+    expect(out).toContain('bk 30');
+    expect(out).toContain('bk 10');
+    expect(out).toContain('lt 45');
+    expect(out).toContain('rt 15');
+  });
+
+  it('maps pencolor/fillcolor/color separately and dot with color arg', () => {
+    const out = pythonToTurtle(`t = turtle.Turtle()
+t.pencolor('red')
+t.fillcolor('blue')
+t.color('green')
+t.dot(10, 'gold')
+t.dot(5)`);
+    expect(out).toContain('pencolor red');
+    expect(out).toContain('fillcolor blue');
+    expect(out).toContain('color green');
+    expect(out).toContain('dot 10, gold');
+    expect(out).toContain('dot 5');
+  });
+
+  it('maps circle with extent and steps', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+t.circle(50, 180, 8)`,
+      C,
+    );
+    // 半圆 180°，8 步 → 仍是多点笔画
+    expect(items.length).toBe(1);
+    expect(items[0].points.length).toBeGreaterThan(4);
+  });
+
+  it('ignores state queries and animation/event methods', () => {
+    const out = pythonToTurtle(`t = turtle.Turtle()
+t.pos()
+t.xcor()
+t.ycor()
+t.heading()
+t.isdown()
+t.stamp()
+t.write('hi')
+t.undo()
+t.shape('turtle')
+t.tracer(0)
+t.update()
+t.setup(800, 600)
+t.forward(50)`);
+    // 所有查询/动画/事件行被忽略，只剩 forward
+    expect(out).toContain('fd 50');
+    expect(out.split('\n').length).toBeLessThanOrEqual(3);
+    expect(out).not.toContain('pos');
+    expect(out).not.toContain('stamp');
+    expect(out).not.toContain('setup');
+  });
+
+  it('supports module-level turtle function calls', () => {
+    const out = pythonToTurtle(`import turtle
+t = turtle.Turtle()
+turtle.penup()
+turtle.goto(0, 0)
+turtle.pendown()
+turtle.forward(60)`);
+    expect(out).toContain('pu');
+    expect(out).toContain('goto 0, 0');
+    expect(out).toContain('pd');
+    expect(out).toContain('fd 60');
+  });
+
+  it('supports nested functions and recursion in python style', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+def draw(n):
+    if n == 0:
+        return
+    t.forward(30)
+    t.right(60)
+    draw(n - 1)
+draw(6)`,
+      C,
+    );
+    expect(items.length).toBe(1);
+    // 6 段前进，正六边形闭合于起点
+    const p = items[0].points;
+    expect(Math.round(p[0])).toBe(200);
+    expect(Math.round(p[1])).toBe(150);
+    expect(Math.round(p[p.length - 2])).toBe(200);
+    expect(Math.round(p[p.length - 1])).toBe(150);
+  });
+
+  it('supports multiple variables including underscore loop var', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+size = 40
+for _ in range(3):
+    t.forward(size)
+    t.left(120)`,
+      C,
+    );
+    // 3 段构成三角形，闭合于起点
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    expect(Math.round(p[0])).toBe(200);
+    expect(Math.round(p[1])).toBe(150);
+    expect(Math.round(p[p.length - 2])).toBe(200);
+    expect(Math.round(p[p.length - 1])).toBe(150);
+  });
+
+  it('supports while loop and boolean conditions in python style', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+i = 0
+while i < 4:
+    t.forward(20)
+    i = i + 1
+    if i == 2:
+        t.color('red')`,
+      C,
+    );
+    expect(items.length).toBe(1);
+    // 4 段直线，其中一段中途换色
+    const s = items[0];
+    expect(s.colors.length).toBeGreaterThan(1);
+    expect(s.colors.includes('#e74c3c')).toBe(true);
+  });
 });
