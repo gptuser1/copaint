@@ -62,7 +62,7 @@ const COMMANDS = new Set([
   'circle', 'dot', 'rect', 'rectangle', 'ellipse', 'oval', 'line',
   'begin_fill', 'bf', 'end_fill', 'ef',
   'repeat', 'while', 'for', 'if', 'else', 'to', 'return', 'clear',
-  'pos', 'heading', 'isdown',
+  'pos', 'heading', 'isdown', 'break', 'continue',
 ]);
 
 function expandHex(h: string): string {
@@ -94,6 +94,10 @@ function truthy(v: Value): boolean {
 class ReturnSignal {
   constructor(public value?: Value) {}
 }
+
+// break / continue 通过异常向上抛，由最近一层循环捕获
+class BreakSignal {}
+class ContinueSignal {}
 
 // ── 词法 ──
 type TokType = 'num' | 'ident' | 'color' | 'op';
@@ -166,7 +170,9 @@ type Stmt =
   | { kind: 'if'; cond: Token[]; then: Stmt[]; elseStmt: Stmt[] | null }
   | { kind: 'def'; name: string; params: string[]; body: Stmt[] }
   | { kind: 'call'; name: string; args: Token[][] }
-  | { kind: 'return'; value: Token[] | null };
+  | { kind: 'return'; value: Token[] | null }
+  | { kind: 'break' }
+  | { kind: 'continue' };
 
 // 仅推进位置的表达式扫描（与运行时求值 parseExpr 语法一致，避免解析期产生副作用）
 function skipExpr(tokens: Token[], pos: { i: number }): void {
@@ -276,7 +282,9 @@ function parse(tokens: Token[]): Stmt[] {
     const args: Token[][] = [];
     while (pos.i < tokens.length) {
       const t = tokens[pos.i];
-      if (t.type === 'op' && (t.value === '{' || t.value === '}')) break;
+      if (t.type === 'op' && (t.value === '{' || t.value === '}' || t.value === '=')) break;
+      // 命令参数后紧跟 `ident =` 是赋值语句，不是命令参数，立即停止
+      if (t.type === 'ident' && (!COMMANDS.has(t.value)) && tokens[pos.i + 1]?.type === 'op' && tokens[pos.i + 1].value === '=') break;
       if (t.type === 'ident' && COMMANDS.has(t.value)) break;
       const start = pos.i;
       term();
@@ -366,6 +374,8 @@ function parse(tokens: Token[]): Stmt[] {
         : null;
       return { kind: 'return', value };
     }
+    if (v === 'break') { pos.i++; return { kind: 'break' }; }
+    if (v === 'continue') { pos.i++; return { kind: 'continue' }; }
     if (t.type === 'ident') {
       pos.i++;
       if (isOpTok(tokens, pos, '=')) {
@@ -800,13 +810,17 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
         case 'assign': setVar(s.name, evalExpr(s.value)); break;
         case 'repeat': {
           const n = Math.min(Math.floor(toNum(evalExpr(s.count))), 1000);
-          for (let k = 0; k < n && !aborted; k++) exec(s.body);
+          for (let k = 0; k < n && !aborted; k++) {
+            try { exec(s.body); }
+            catch (e) { if (e instanceof BreakSignal) break; if (e instanceof ContinueSignal) continue; throw e; }
+          }
           break;
         }
         case 'while': {
           while (!aborted && truthy(evalExpr(s.cond))) {
             if (++ops > maxOps) { aborted = true; break; }
-            exec(s.body);
+            try { exec(s.body); }
+            catch (e) { if (e instanceof BreakSignal) break; if (e instanceof ContinueSignal) continue; throw e; }
           }
           break;
         }
@@ -814,7 +828,12 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
           if (s.init) exec([s.init]);
           while (!aborted && truthy(evalExpr(s.cond))) {
             if (++ops > maxOps) { aborted = true; break; }
-            exec(s.body);
+            try { exec(s.body); }
+            catch (e) {
+              if (e instanceof BreakSignal) break;
+              if (e instanceof ContinueSignal) { if (s.update) exec([s.update]); continue; }
+              throw e;
+            }
             if (s.update) exec([s.update]);
           }
           break;
@@ -827,6 +846,8 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
         case 'def': break; // 已在预收集阶段注册
         case 'call': callValue(s.name, s.args.map(evalExpr)); break;
         case 'return': throw new ReturnSignal(s.value ? evalExpr(s.value) : undefined);
+        case 'break': throw new BreakSignal();
+        case 'continue': throw new ContinueSignal();
       }
     }
   }

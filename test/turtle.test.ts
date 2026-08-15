@@ -566,4 +566,57 @@ t.forward(50)`);
     expect(out).not.toContain('hideturtle');
     expect(out).toContain('fd 50');
   });
+
+  it('normalizes python logical operators and booleans', () => {
+    // and/or/not/True/False 归一化为 DSL 语法 && || ! true false
+    const out = pythonToTurtle(`t = turtle.Turtle()
+if i > 0 and i < 10:
+    t.forward(10)
+elif i < 0 or j > 0:
+    t.forward(20)
+while True:
+    break
+while not running:
+    t.forward(5)`);
+    expect(out).toContain('if (i > 0 && i < 10)');
+    expect(out).toContain('else if (i < 0 || j > 0)');
+    expect(out).toContain('while (true)');
+    expect(out).toContain('while (! running)');
+  });
+
+  it('executes python-style break/continue in loops', () => {
+    // break 提前退出：for 到 i=3 停止，共画 3 段
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+for i in range(10):
+    if i == 3:
+        break
+    t.forward(10)`,
+      C,
+    );
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    // 画布起点 (200,150)，前进 3*10=30 → 终点 x=230
+    expect(Math.round(p[p.length - 2])).toBe(230);
+  });
+
+  it('continue skips to next iteration', () => {
+    // continue 跳过 i==2 之后的前进，但仍转向：画 4 条边（0,1,3,4）
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+for i in range(5):
+    if i == 2:
+        continue
+    t.forward(10)
+    t.right(90)`,
+      C,
+    );
+    // 4 段前进 + 4 次转向，闭合于起点
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    expect(Math.round(p[0])).toBe(200);
+    expect(Math.round(p[1])).toBe(150);
+  });
 });

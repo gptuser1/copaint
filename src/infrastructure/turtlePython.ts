@@ -82,6 +82,16 @@ function stripQuotes(s: string): string {
   return s.replace(/"([^"]*)"/g, '$1').replace(/'([^']*)'/g, '$1');
 }
 
+// 把 Python 逻辑/布尔写法归一化为 DSL 语法（词边界，避免误伤变量名/颜色名）
+function normalizePython(s: string): string {
+  return s
+    .replace(/\band\b/g, '&&')
+    .replace(/\bor\b/g, '||')
+    .replace(/\bnot\b/g, '!')
+    .replace(/\bTrue\b/g, 'true')
+    .replace(/\bFalse\b/g, 'false');
+}
+
 // 按逗号切分参数（忽略括号内逗号）
 function splitArgs(s: string): string[] {
   const out: string[] = [];
@@ -152,7 +162,7 @@ function translateLine(raw: string): LineInfo {
   if (/^\s*(\w+\.)?Turtle\s*\(/i.test(trimmed)) return { indent: 0, kind: 'drop', text: '' };
 
   const realIndent = raw.length - trimmed.length;
-  let content = stripComment(stripQuotes(trimmed)).replace(/\s+$/, '');
+  let content = normalizePython(stripComment(stripQuotes(trimmed))).replace(/\s+$/, '');
   if (!content) return { indent: realIndent, kind: 'drop', text: '' };
 
   let m: RegExpMatchArray | null;
