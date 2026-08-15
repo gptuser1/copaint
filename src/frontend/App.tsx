@@ -21,7 +21,7 @@ const BOARD_HEIGHT = 300;
 function turtlePt(x: number, y: number): string {
   const lx = Math.round(x - BOARD_WIDTH / 2);
   const ly = Math.round(BOARD_HEIGHT / 2 - y);
-  return `${lx} ${ly}`;
+  return `${lx}, ${ly}`;
 }
 
 // 把一次手绘动作翻译成 turtle 脚本（前端统一走 turtle 落笔）
@@ -56,7 +56,7 @@ function elementToTurtleScript(el: Partial<BoardElement> & { id?: string }): str
     const cy = (el.y || 0) + (el.height || 0) / 2;
     lines.push('pu');
     move(cx, cy);
-    lines.push(`ellipse ${Math.max(0.5, (el.width || 0) / 2)} ${Math.max(0.5, (el.height || 0) / 2)}`);
+    lines.push(`ellipse ${Math.max(0.5, (el.width || 0) / 2)}, ${Math.max(0.5, (el.height || 0) / 2)}`);
   }
   return lines.join('\n');
 }

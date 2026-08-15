@@ -10,6 +10,7 @@
 //       自定义函数: to name(a b) { ... } 定义、name(a, b) 调用、return 返回值，
 //       clear(清空画布后重画)。纯 JS，无依赖。
 import type { BoardElement } from '../domain/types';
+import { isPythonStyle, pythonToTurtle } from './turtlePython';
 
 // 一段连续的落笔笔画（pen 元素的数据来源）
 export interface PenStroke {
@@ -848,7 +849,7 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
     }
   }
 
-  const stmts = parse(tokenize(script));
+  const stmts = parse(tokenize(isPythonStyle(script) ? pythonToTurtle(script) : script));
   collectDefs(stmts);
   try {
     exec(stmts);

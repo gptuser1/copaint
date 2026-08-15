@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runTurtle, turtleToElements } from '../src/infrastructure/turtle';
+import { isPythonStyle, pythonToTurtle } from '../src/infrastructure/turtlePython';
 
 describe('turtle', () => {
   it('draws a square with repeat', () => {
@@ -454,28 +455,115 @@ describe('turtle conformance with standard semantics', () => {
     expect('fill' in d && d.fill).toBe('#e74c3c');
   });
 
-  it('draws concentric squares centered at origin (doc example)', () => {
-    // 每圈 pu 移到左下角(-size/2,-size/2)再 pd 画，lt 90 使正方形朝 +x/+y 展开，
-    // 从而所有正方形都以原点为中心（同心），而非共用同一角点
+  });
+
+// ── Python turtle 语法子集：transpiler 翻译 + 执行 ──
+describe('python turtle syntax subset', () => {
+  const C = { startX: 200, startY: 150 };
+
+  it('detects python-style scripts', () => {
+    expect(isPythonStyle('import turtle\nt = turtle.Turtle()\nfor i in range(4):\n    t.forward(100)')).toBe(true);
+    expect(isPythonStyle('for i in range(4):\n    fd 100')).toBe(true);
+    expect(isPythonStyle('t.forward(100)')).toBe(true);
+    // 现有 DSL 不应被误判
+    expect(isPythonStyle('pd\nrepeat 4 { fd 50 rt 90 }')).toBe(false);
+  });
+
+  it('translates import/turtle instantiation away and defaults pen down', () => {
+    const out = pythonToTurtle(`import turtle
+t = turtle.Turtle()
+for i in range(4):
+    t.forward(100)
+    t.left(90)`);
+    expect(out.startsWith('pd')).toBe(true);
+    expect(out).not.toContain('import');
+    expect(out).not.toContain('Turtle');
+    expect(out).toContain('while (i < 4)');
+    expect(out).toContain('fd 100');
+  });
+
+  it('draws a square with import + dot-method + for-in-range + indentation', () => {
     const items = runTurtle(
-      `size = 20
-      repeat 3 {
-        pu goto -size/2, -size/2
-        pd
-        repeat 4 { fd size lt 90 }
-        size = size + 20
-      }`,
+      `import turtle
+t = turtle.Turtle()
+t.speed(0)
+for i in range(4):
+    t.forward(100)
+    t.right(90)
+t.hideturtle()`,
       C,
     );
-    expect(items.length).toBe(3);
-    for (const it of items) {
-      const p = it.points;
-      const xs = p.filter((_, i) => i % 2 === 0);
-      const ys = p.filter((_, i) => i % 2 === 1);
-      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-      const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-      expect(Math.round(cx)).toBe(200); // 画布中心 x
-      expect(Math.round(cy)).toBe(150); // 画布中心 y
-    }
+    expect(items.length).toBe(1);
+    const p = items[0].points;
+    // 闭合：首尾同点（从原点出发画正方形）
+    expect(Math.round(p[0])).toBe(200);
+    expect(Math.round(p[1])).toBe(150);
+    expect(Math.round(p[p.length - 2])).toBe(200);
+    expect(Math.round(p[p.length - 1])).toBe(150);
+  });
+
+  it('maps top-level and dot-method calls, strips quotes, keeps hex color', () => {
+    const out = pythonToTurtle(`t.color("red", "#ff8800")
+t.begin_fill()
+for i in range(5):
+    t.forward(60)
+    t.left(144)
+t.end_fill()`);
+    expect(out).toContain('color red, #ff8800');
+    expect(out).not.toContain('"');
+    const items = runTurtle(out, C);
+    expect(items.some((i) => 'fill' in i && i.fill === '#ff8800')).toBe(true);
+  });
+
+  it('supports while, variables and negative coords in python style', () => {
+    const items = runTurtle(
+      `t = turtle.Turtle()
+t.goto(-100, -50)
+t.circle(40, 180)
+t.penup()
+t.forward(20)`,
+      C,
+    );
+    expect(items.length).toBeGreaterThanOrEqual(1);
+    const p = items[0].points;
+    // pythonToTurtle 强制开头 pd，goto 从原点(0,0)画到(-100,-50)，
+    // 笔画终点 → 画布(100,200)
+    expect(Math.round(p[p.length - 2])).toBe(100);
+    expect(Math.round(p[p.length - 1])).toBe(200);
+  });
+
+  it('translates def and if/else chains', () => {
+    const out = pythonToTurtle(
+      `def square(size):
+    for i in range(4):
+        t.forward(size)
+        t.right(90)
+t.penup()
+t.goto(0, 0)
+t.pendown()
+if size > 10:
+    square(30)
+else:
+    square(10)`,
+    );
+    expect(out).toContain('to square(size)');
+    expect(out).toContain('} else {');
+  });
+
+  it('range with start/step maps to while loop bounds', () => {
+    const out = pythonToTurtle(`for i in range(1, 5):
+    t.forward(i)`);
+    expect(out).toContain('i = 1');
+    expect(out).toContain('while (i < 5)');
+    expect(out).toContain('i = i + 1');
+  });
+
+  it('ignores no-op methods like speed and hideturtle', () => {
+    const out = pythonToTurtle(`t.speed(0)
+t.hideturtle()
+t.forward(50)`);
+    expect(out).not.toContain('speed');
+    expect(out).not.toContain('hideturtle');
+    expect(out).toContain('fd 50');
   });
 });
