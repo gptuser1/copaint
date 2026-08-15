@@ -62,20 +62,24 @@ aiApp.post('/:id/ai', async (c) => {
   return streamSSE(c, async (stream) => {
     let content = '';
     let reasoning = '';
+    let usage: unknown;
     try {
       for await (const chunk of streamLLM(config, messages, { temperature, maxTokens, thinking, thinkingBudget })) {
         if (chunk.type === 'thinking') {
           reasoning += chunk.text;
           await stream.writeSSE({ event: 'thinking', data: JSON.stringify({ text: chunk.text }) });
-        } else {
+        } else if (chunk.type === 'content') {
           content += chunk.text;
           await stream.writeSSE({ event: 'response', data: JSON.stringify({ text: chunk.text }) });
+        } else if (chunk.type === 'usage') {
+          usage = chunk.usage;
+          await stream.writeSSE({ event: 'usage', data: JSON.stringify({ usage: chunk.usage }) });
         }
       }
 
       const { script } = parseTurtleResponse(content);
       if (!script.trim()) {
-        await stream.writeSSE({ event: 'done', data: JSON.stringify({ ok: true, script: '', added: 0, cleared: false, raw: content, reasoning }) });
+        await stream.writeSSE({ event: 'done', data: JSON.stringify({ ok: true, script: '', added: 0, cleared: false, raw: content, reasoning, usage }) });
         return;
       }
 
@@ -94,7 +98,7 @@ aiApp.post('/:id/ai', async (c) => {
           } catch { /* 单个元素写入失败不阻断整体 */ }
         }
       }
-      await stream.writeSSE({ event: 'done', data: JSON.stringify({ ok: true, script, added: added.length, cleared, raw: content, reasoning }) });
+      await stream.writeSSE({ event: 'done', data: JSON.stringify({ ok: true, script, added: added.length, cleared, raw: content, reasoning, usage }) });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       try { await stream.writeSSE({ event: 'error', data: JSON.stringify({ error: msg }) }); } catch { /* 客户端已断开 */ }

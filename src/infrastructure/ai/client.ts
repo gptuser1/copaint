@@ -229,6 +229,7 @@ function cleanScript(s: string): string {
 export interface LlmRaw {
   content: string;    // 正文（含 <script>…</script>）
   reasoning: string;  // 思考过程；非思考模型为空串
+  usage?: LlmUsage;   // 用量统计（token/缓存/推理）
 }
 
 // 组装可调参数并调用 LLM，返回原始响应（正文 + 思考）
@@ -268,19 +269,46 @@ async function callLLM(
     const errBody = await res.text();
     throw new Error(`LLM error ${res.status}: ${errBody.slice(0, 300)}`);
   }
-  const data: { choices?: Array<{ message?: { content?: string; reasoning?: string; reasoning_content?: string } }> } = await res.json();
+  const data: { choices?: Array<{ message?: { content?: string; reasoning?: string; reasoning_content?: string } }>; usage?: unknown } = await res.json();
   const msg = data?.choices?.[0]?.message || {};
   return {
     content: msg.content || '',
     // 兼容主流思考模型的字段名：DeepSeek 用 reasoning_content，OpenAI 系用 reasoning
     reasoning: msg.reasoning || msg.reasoning_content || '',
+    usage: parseUsage(data?.usage),
   };
 }
 
-// 流式分块：thinking 为思维链增量，content 为正文增量
+// 流式分块：thinking 为思维链增量，content 为正文增量，usage 为末尾用量汇总
 export interface LlmChunk {
-  type: 'thinking' | 'content';
+  type: 'thinking' | 'content' | 'usage';
   text: string;
+  usage?: LlmUsage;
+}
+
+// LLM 用量：token 统计 + 缓存命中 + 推理 token（来自响应 usage 字段）
+export interface LlmUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  promptCacheHitTokens?: number;   // 命中缓存的输入 token
+  promptCacheMissTokens?: number;  // 未命中缓存的输入 token
+  reasoningTokens?: number;        // 思维链 token
+}
+
+// 解析响应 usage 字段（兼容 OpenAI 系/SiliconFlow 字段名）
+function parseUsage(u: unknown): LlmUsage | undefined {
+  if (!u || typeof u !== 'object') return undefined;
+  const o = u as Record<string, any>;
+  return {
+    promptTokens: typeof o.prompt_tokens === 'number' ? o.prompt_tokens : undefined,
+    completionTokens: typeof o.completion_tokens === 'number' ? o.completion_tokens : undefined,
+    totalTokens: typeof o.total_tokens === 'number' ? o.total_tokens : undefined,
+    promptCacheHitTokens: typeof o.prompt_cache_hit_tokens === 'number' ? o.prompt_cache_hit_tokens : undefined,
+    promptCacheMissTokens: typeof o.prompt_cache_miss_tokens === 'number' ? o.prompt_cache_miss_tokens : undefined,
+    reasoningTokens: typeof o?.completion_tokens_details?.reasoning_tokens === 'number'
+      ? o.completion_tokens_details.reasoning_tokens : undefined,
+  };
 }
 
 // 流式调用 LLM：请求 stream:true，逐块 yield 思维链与正文增量。
@@ -324,6 +352,7 @@ export async function* streamLLM(
   const decoder = new TextDecoder();
   let buffer = '';
   let done = false;
+  let usage: LlmUsage | undefined;
   while (!done) {
     const { done: rd, value } = await reader.read();
     if (rd) break;
@@ -337,6 +366,9 @@ export async function* streamLLM(
       if (data === '[DONE]') { done = true; break; }
       try {
         const json = JSON.parse(data);
+        // 流式响应通常在末尾分块携带 usage
+        const u = parseUsage(json?.usage);
+        if (u) usage = u;
         const delta: { reasoning_content?: unknown; content?: unknown } = json?.choices?.[0]?.delta || {};
         if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
           yield { type: 'thinking', text: delta.reasoning_content };
@@ -347,6 +379,7 @@ export async function* streamLLM(
       } catch { /* 跳过畸形分块 */ }
     }
   }
+  if (usage) yield { type: 'usage', text: '', usage };
 }
 
 // 把解析出的 turtle 脚本跑成元素（供流式路由在流结束后落笔）

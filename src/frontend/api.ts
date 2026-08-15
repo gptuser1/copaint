@@ -83,9 +83,19 @@ export interface AiParams {
   apply?: boolean;
 }
 
+// AI 用量统计（对应响应 usage 字段）
+export interface AiUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  promptCacheHitTokens?: number;
+  promptCacheMissTokens?: number;
+  reasoningTokens?: number;
+}
+
 // 流式 AI 执行事件（后端 SSE 转发 DeepSeek 的 thinking/content 增量）
 export interface AiStreamEvent {
-  type: 'thinking' | 'response' | 'done' | 'error';
+  type: 'thinking' | 'response' | 'usage' | 'done' | 'error';
   text?: string;             // thinking / response 增量
   ok?: boolean;
   script?: string;           // done：解析出的 turtle 脚本
@@ -93,6 +103,7 @@ export interface AiStreamEvent {
   cleared?: boolean;         // done：是否清空过画布
   raw?: string;              // done：完整正文
   reasoning?: string;        // done：完整思维链
+  usage?: AiUsage;           // usage / done：token 用量与缓存命中
   error?: string;            // error：错误信息
 }
 
