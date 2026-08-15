@@ -619,4 +619,89 @@ for i in range(5):
     expect(Math.round(p[0])).toBe(200);
     expect(Math.round(p[1])).toBe(150);
   });
+
+  it('ignores Screen() instantiation and bgcolor', () => {
+    const out = pythonToTurtle(`import turtle
+window = turtle.Screen()
+window.bgcolor("lightblue")
+pen = turtle.Turtle()
+pen.goto(-100, -100)`);
+    expect(out).not.toContain('Screen');
+    expect(out).not.toContain('bgcolor');
+    expect(out).toContain('goto -100, -100');
+    // Screen 实例化被忽略，不会产生 window = Screen() 赋值
+    expect(out).not.toContain('window');
+  });
+
+  it('resolves extended CSS color names like skyblue/lightblue', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+t.color("black", "skyblue")
+t.begin_fill()
+for _ in range(4):
+    t.forward(40)
+    t.left(90)
+t.end_fill()
+t.color("gold")
+t.dot(10)`,
+      C,
+    );
+    const fills = items.filter((i) => 'fill' in i && i.fill);
+    // skyblue → #87ceeb，gold dot 填充 → #ffd700
+    expect(fills.some((f) => f.fill === '#87ceeb')).toBe(true);
+    expect(fills.some((f) => f.fill === '#ffd700')).toBe(true);
+  });
+
+  it('draws a complete house with screens, fills and multiple shapes', () => {
+    // 端到端：验证典型 agent 生成的"小房子"脚本能正确产出所有填充与描边
+    const items = runTurtle(
+      `import turtle
+window = turtle.Screen()
+window.bgcolor("lightblue")
+pen = turtle.Turtle()
+pen.speed(5)
+pen.penup()
+pen.goto(-100, -100)
+pen.pendown()
+pen.color("black", "yellow")
+pen.begin_fill()
+for _ in range(4):
+    pen.forward(200)
+    pen.left(90)
+pen.end_fill()
+pen.penup()
+pen.goto(-120, 100)
+pen.pendown()
+pen.color("black", "red")
+pen.begin_fill()
+pen.goto(0, 200)
+pen.goto(120, 100)
+pen.goto(-120, 100)
+pen.end_fill()
+pen.penup()
+pen.goto(0, -70)
+pen.pendown()
+pen.color("gold")
+pen.dot(10)
+pen.penup()
+pen.goto(-70, 0)
+pen.pendown()
+pen.color("black", "skyblue")
+pen.begin_fill()
+for _ in range(4):
+    pen.forward(40)
+    pen.left(90)
+pen.end_fill()
+pen.hideturtle()
+window.mainloop()`,
+      C,
+    );
+    const fills = items.filter((i) => 'fill' in i && i.fill);
+    // 房子主体(黄)、屋顶(红)、门把手点(gold)、窗户(skyblue)
+    expect(fills.some((f) => f.fill === '#f1c40f')).toBe(true);
+    expect(fills.some((f) => f.fill === '#e74c3c')).toBe(true);
+    expect(fills.some((f) => f.fill === '#ffd700')).toBe(true);
+    expect(fills.some((f) => f.fill === '#87ceeb')).toBe(true);
+  });
 });

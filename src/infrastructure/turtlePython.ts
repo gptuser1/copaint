@@ -156,10 +156,10 @@ function translateLine(raw: string): LineInfo {
   const trimmed = raw.trim();
   if (!trimmed) return { indent: 0, kind: 'drop', text: '' };
 
-  // 忽略行：import / from import / Turtle 实例化
+  // 忽略行：import / from import / Turtle 实例化 / Screen 实例化
   if (/^(import|from)\s/i.test(trimmed)) return { indent: 0, kind: 'drop', text: '' };
-  if (/=\s*(\w+\.)?Turtle\s*\(/i.test(trimmed)) return { indent: 0, kind: 'drop', text: '' };
-  if (/^\s*(\w+\.)?Turtle\s*\(/i.test(trimmed)) return { indent: 0, kind: 'drop', text: '' };
+  if (/=\s*(\w+\.)?(Turtle|Screen)\s*\(/i.test(trimmed)) return { indent: 0, kind: 'drop', text: '' };
+  if (/^\s*(\w+\.)?(Turtle|Screen)\s*\(/i.test(trimmed)) return { indent: 0, kind: 'drop', text: '' };
 
   const realIndent = raw.length - trimmed.length;
   let content = normalizePython(stripComment(stripQuotes(trimmed))).replace(/\s+$/, '');
