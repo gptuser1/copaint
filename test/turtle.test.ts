@@ -864,4 +864,65 @@ while i < 4:
     expect(s.colors.length).toBeGreaterThan(1);
     expect(s.colors.includes('#e74c3c')).toBe(true);
   });
+
+  it('single-arg color() also sets fill color like python turtle', () => {
+    // Python turtle 语义：color(c) 同时设笔色+填充色
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+t.color('red')
+t.begin_fill()
+for _ in range(5):
+    t.forward(100)
+    t.right(144)
+t.end_fill()`,
+      C,
+    );
+    const fills = items.filter((i) => 'fill' in i && i.fill);
+    expect(fills.some((f) => f.fill === '#e74c3c')).toBe(true);
+  });
+
+  it('supports color list and index access for petals', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+colors = ['red', 'orange', 'yellow', 'pink', 'purple']
+for i in range(5):
+    t.color(colors[i])
+    t.begin_fill()
+    t.circle(20)
+    t.end_fill()
+    t.left(72)`,
+      C,
+    );
+    const fills = items.filter((i) => 'fill' in i && i.fill);
+    expect(fills.map((f) => f.fill)).toEqual([
+      '#e74c3c', '#e67e22', '#f1c40f', '#ff6b9d', '#8e44ad',
+    ]);
+  });
+
+  it('star shape with fill color and hide/show etc', () => {
+    const items = runTurtle(
+      `import turtle
+window = turtle.Screen()
+window.setup(400, 300)
+window.bgcolor('white')
+pen = turtle.Turtle()
+pen.speed(5)
+pen.penup()
+pen.goto(-50, 0)
+pen.pendown()
+pen.color('red')
+pen.begin_fill()
+for i in range(5):
+    pen.forward(100)
+    pen.right(144)
+pen.end_fill()
+pen.hideturtle()
+window.mainloop()`,
+      C,
+    );
+    const fills = items.filter((i) => 'fill' in i && i.fill);
+    expect(fills.some((f) => f.fill === '#e74c3c')).toBe(true);
+  });
 });

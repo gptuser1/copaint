@@ -111,7 +111,7 @@ function parseColor(v: string): string {
 }
 
 // 表达式求值结果：数字 / 颜色字符串 / 布尔
-type Value = number | string | boolean;
+type Value = number | string | boolean | Value[];
 
 function toNum(v: Value): number {
   if (typeof v === 'number') return v;
@@ -178,7 +178,7 @@ function tokenize(src: string): Token[] {
     if (two === '==' || two === '!=' || two === '<=' || two === '>=' || two === '&&' || two === '||') {
       toks.push({ type: 'op', value: two }); i += 2; continue;
     }
-    if ('{}()=,+-*/%<>!;'.includes(ch)) {
+    if ('{}()=,+-*/%<>![];'.includes(ch)) {
       toks.push({ type: 'op', value: ch }); i++; continue;
     }
     i++; // 未知字符跳过
@@ -250,8 +250,25 @@ function skipPrim(tokens: Token[], pos: { i: number }): void {
     if (isOpTok(tokens, pos, ')')) pos.i++;
     return;
   }
+  // 数组字面量 [a, b, c]
+  if (t.type === 'op' && t.value === '[') {
+    pos.i++;
+    while (pos.i < tokens.length && !isOpTok(tokens, pos, ']')) {
+      skipExpr(tokens, pos);
+      if (isOpTok(tokens, pos, ',')) pos.i++;
+    }
+    if (isOpTok(tokens, pos, ']')) pos.i++;
+    return;
+  }
   if (t.type === 'ident') {
     pos.i++;
+    // 数组索引 colors[i]
+    if (isOpTok(tokens, pos, '[')) {
+      pos.i++;
+      skipExpr(tokens, pos);
+      if (isOpTok(tokens, pos, ']')) pos.i++;
+      return;
+    }
     if (isOpTok(tokens, pos, '(')) {
       pos.i++;
       while (pos.i < tokens.length && !isOpTok(tokens, pos, ')')) {
@@ -750,8 +767,27 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
       if (isOpTok(tokens, pos, ')')) pos.i++;
       return v;
     }
+    // 数组字面量 [a, b, c]
+    if (t.type === 'op' && t.value === '[') {
+      pos.i++;
+      const arr: Value[] = [];
+      while (pos.i < tokens.length && !isOpTok(tokens, pos, ']')) {
+        arr.push(parseExpr(tokens, pos));
+        if (isOpTok(tokens, pos, ',')) pos.i++;
+      }
+      if (isOpTok(tokens, pos, ']')) pos.i++;
+      return arr;
+    }
     if (t.type === 'ident') {
       const name = t.value; pos.i++;
+      // 数组索引 colors[i]
+      if (isOpTok(tokens, pos, '[')) {
+        pos.i++;
+        const idx = Math.floor(toNum(parseExpr(tokens, pos)));
+        if (isOpTok(tokens, pos, ']')) pos.i++;
+        const v = getVar(name);
+        return Array.isArray(v) ? (v[idx] ?? 0) : 0;
+      }
       if (isOpTok(tokens, pos, '(')) {
         pos.i++;
         const args: Value[] = [];
@@ -790,9 +826,10 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
       case 'pu': case 'penup': case 'up': flush(); penDown = false; break;
       case 'pd': case 'pendown': case 'down': penDown = true; break;
       case 'color': {
-        // color <pen> [fill]
+        // Python turtle 语义：color(c) 同时设笔色+填充色；color(p, f) 分离
         if (a[0] !== undefined) color = parseColor(String(a[0]));
         if (a[1] !== undefined) fillColor = parseColor(String(a[1]));
+        else if (a[0] !== undefined) fillColor = color;
         break;
       }
       case 'pencolor': if (a[0] !== undefined) color = parseColor(String(a[0])); break;
