@@ -337,20 +337,32 @@ export function App() {
     }
   }, []);
 
-  // 测试 AI：直接请求不入队，把返回的 turtle 脚本保存，可在下方预览并选择执行到画布
+  // 测试 AI：流式请求（apply:false 不落笔），把思考/原始响应实时显示到对应面板，脚本存到下方预览
   const handleTestAi = useCallback(async () => {
     const instr = instruction.trim();
     if (!instr) return;
     setAiBusy(true);
     setError('');
+    setAiThinking('');
+    setAiResponse('');
     try {
-      const res = await api.testAi(instr, {
+      await api.runAiStream(instr, {
         temperature: parseNum(temperature, 0.7),
         maxTokens: parseNum(maxTokens, 2048),
         thinking,
+        apply: false,
+      }, (ev) => {
+        if (ev.type === 'thinking') {
+          setAiThinking((p) => p + (ev.text || ''));
+        } else if (ev.type === 'response') {
+          setAiResponse((p) => p + (ev.text || ''));
+        } else if (ev.type === 'done') {
+          if (ev.script) setTestScript(ev.script);
+          addLog({ message: ev.script ? `🔬 测试完成，脚本已就绪，可点击「执行到画布」` : '🔬 测试完成，但未返回有效脚本', success: true });
+        } else if (ev.type === 'error') {
+          addLog({ message: `🔬 测试失败: ${ev.error || '未知错误'}`, success: false, error: ev.error });
+        }
       });
-      setTestScript(res.script);
-      addLog({ message: res.script ? `🔬 测试完成，脚本已就绪，可点击「执行到画布」` : '🔬 测试完成，但未返回有效脚本', success: true });
     } catch (e) {
       const msg = String((e as Error).message || e);
       addLog({ message: `🔬 测试失败: ${msg}`, success: false, error: msg });

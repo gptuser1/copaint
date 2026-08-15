@@ -135,6 +135,8 @@ function buildFixedSystem(boardWidth: number, boardHeight: number): string {
     + '初始：笔在原点朝0°，默认落笔，移动不留线先 penup。\n'
     + '\n'
     + '输出：用 <script>...</script> 包裹脚本，缩进4空格，注释 # 开头。\n'
+    + '思考保持简洁：不要逐条复述/详细分析已有元素，快速扫一眼定位新增内容的位置即可，'
+    + '然后直接输出脚本。思考过程务必简短（一两句话），不要长篇论证。\n'
     + '禁止：递归、append()/len()、切片（colors[1:]）、推导式、dict、f-string、print()、'
     + 'import 其他模块（math/random 无需 import）、查询 pos()/xcor()/heading() 返回值。\n'
     + '只允许上述方法语法，禁止自创命令。'

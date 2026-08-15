@@ -77,6 +77,8 @@ export interface AiParams {
   temperature?: number;
   maxTokens?: number;
   thinking?: boolean;
+  // 是否落笔到画布：false 为测试模式，只出脚本不落笔
+  apply?: boolean;
 }
 
 // 流式 AI 执行事件（后端 SSE 转发 DeepSeek 的 thinking/content 增量）
@@ -144,14 +146,6 @@ export async function runAiStream(
       eventName = '';
     }
   }
-}
-
-// 直接测试：不入队，返回解析后的 turtle 脚本（可预览并可执行到画布）
-export function testAi(instruction: string, params?: AiParams): Promise<{ ok: boolean; script: string }> {
-  return req(`/api/boards/${encodeURIComponent(currentBoardId)}/ai/test`, {
-    method: 'POST',
-    body: JSON.stringify({ instruction, ...params }),
-  });
 }
 
 // 换取临时 token（短时效，避免真实 token 出现在 URL 或被转发给 agent）

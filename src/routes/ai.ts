@@ -1,15 +1,16 @@
-// AI 指令路由：流式执行（SSE 实时推送思考与响应）+ 直接测试（只出脚本）
+// AI 指令路由：流式执行（SSE 实时推送思考与响应）
 // 已移除队列：单用户协作场景无需排队，"让 AI 画"直接流式发送并接收，
 // 前端可实时看到思维链(reasoning)与正文(content)的生成过程。
+// 测试模式通过 apply:false 复用同一流式接口，只出脚本不落笔。
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { getState, addElement, clearBoard } from '../realtime/board-client';
 import { requireConfig } from '../services/config';
 import {
-  generateTurtleScript, streamLLM, buildTurtlePrompt,
+  streamLLM, buildTurtlePrompt,
   parseTurtleResponse, elementsFromTurtleScript,
 } from '../infrastructure/ai/client';
-import { NotFoundError, ValidationError, AppError } from '../domain/errors';
+import { NotFoundError, ValidationError } from '../domain/errors';
 import type { BoardElement } from '../domain/types';
 
 export const aiApp = new Hono<{ Bindings: Env }>();
@@ -30,6 +31,8 @@ aiApp.post('/:id/ai', async (c) => {
   const temperature = Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : undefined;
   const maxTokens = Number.isFinite(Number(body.maxTokens)) ? Number(body.maxTokens) : undefined;
   const thinking = typeof body.thinking === 'boolean' ? body.thinking : undefined;
+  // 是否落笔到画布：默认落笔；测试模式传 apply:false 只出脚本（含思考/原始响应）
+  const apply = body.apply !== false;
 
   const board = await getState(c.env, id);
   if (!board) throw new NotFoundError('board not found');
@@ -72,16 +75,20 @@ aiApp.post('/:id/ai', async (c) => {
         return;
       }
 
-      // 跑脚本落笔成元素
-      const { elements: partials, cleared } = elementsFromTurtleScript(script, input.width, input.height);
-      if (cleared) {
-        await clearBoard(c.env, id);
-      }
-      const added: BoardElement[] = [];
-      for (const p of partials) {
-        try {
-          added.push(await addElement(c.env, id, p as Omit<BoardElement, 'createdAt' | 'id'> & { id?: string }));
-        } catch { /* 单个元素写入失败不阻断整体 */ }
+      // 测试模式（apply:false）：只出脚本，不落笔到画布
+      let added: BoardElement[] = [];
+      let cleared = false;
+      if (apply) {
+        const { elements: partials, cleared: didClear } = elementsFromTurtleScript(script, input.width, input.height);
+        cleared = didClear;
+        if (cleared) {
+          await clearBoard(c.env, id);
+        }
+        for (const p of partials) {
+          try {
+            added.push(await addElement(c.env, id, p as Omit<BoardElement, 'createdAt' | 'id'> & { id?: string }));
+          } catch { /* 单个元素写入失败不阻断整体 */ }
+        }
       }
       await stream.writeSSE({ event: 'done', data: JSON.stringify({ ok: true, script, added: added.length, cleared, raw: content, reasoning }) });
     } catch (e) {
@@ -89,50 +96,4 @@ aiApp.post('/:id/ai', async (c) => {
       try { await stream.writeSSE({ event: 'error', data: JSON.stringify({ error: msg }) }); } catch { /* 客户端已断开 */ }
     }
   });
-});
-
-// 直接测试：同步调用 LLM，只返回解析后的 turtle 脚本及原始响应（供调试/预览）
-aiApp.post('/:id/ai/test', async (c) => {
-  const id = c.req.param('id');
-  const body = await c.req.json().catch(() => ({}));
-  const instruction = (body.instruction || '').trim();
-  if (!instruction) throw new ValidationError('instruction required');
-
-  try {
-    const board = await getState(c.env, id);
-    if (!board) throw new NotFoundError('board not found');
-
-    const [apiKey, baseUrl, model] = await Promise.all([
-      requireConfig(c.env, 'openai_api_key'),
-      requireConfig(c.env, 'openai_base_url'),
-      requireConfig(c.env, 'openai_model'),
-    ]);
-
-    const { script, raw, reasoning } = await generateTurtleScript(
-      { apiKey, baseUrl, model },
-      {
-        instruction,
-        width: board.meta.width,
-        height: board.meta.height,
-        elements: board.elements,
-        stepHint: '测试模式，请直接输出 turtle 脚本，不要解释、不要 markdown 代码块。',
-      },
-      {
-        temperature: Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : undefined,
-        maxTokens: Number.isFinite(Number(body.maxTokens)) ? Number(body.maxTokens) : undefined,
-        thinking: typeof body.thinking === 'boolean' ? body.thinking : undefined,
-      },
-    );
-
-    return c.json({ ok: true, script, raw, reasoning });
-  } catch (e) {
-    // 保留服务端日志便于排查
-    console.error('ai test failed:', e);
-    // 返回详细错误，避免被全局 onError 折叠成笼统的 internal error
-    if (e instanceof AppError) {
-      return c.json({ error: e.message, code: e.code }, e.status as any);
-    }
-    const msg = e instanceof Error ? e.message : String(e);
-    return c.json({ error: msg, code: 'AI_TEST_FAILED' }, 500);
-  }
 });
