@@ -827,6 +827,35 @@ draw(6)`,
     expect(Math.round(p[p.length - 1])).toBe(150);
   });
 
+  it('fractal tree: double recursion with def after commands still draws', () => {
+    // 回归：早期版本 def 在语句中间 + 双递归 + 顶层调用 branch(4) 时无输出
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+t.speed(0)
+t.penup()
+t.goto(0, -100)
+t.pendown()
+t.left(90)
+t.color("green")
+def branch(n):
+    if n == 0:
+        return
+    t.forward(30)
+    t.left(30)
+    branch(n - 1)
+    t.right(60)
+    branch(n - 1)
+    t.left(30)
+    t.backward(30)
+branch(4)`,
+      C,
+    );
+    // 深度4双递归：2^4-1=15 个非叶节点，每节点 2 段移动 = 30 段，连续一笔 31 顶点
+    expect(items.length).toBe(1);
+    expect(items[0].points.length).toBe(62);
+  });
+
   it('supports multiple variables including underscore loop var', () => {
     const items = runTurtle(
       `import turtle
@@ -924,5 +953,145 @@ window.mainloop()`,
     );
     const fills = items.filter((i) => 'fill' in i && i.fill);
     expect(fills.some((f) => f.fill === '#e74c3c')).toBe(true);
+  });
+});
+
+describe('python recursion coverage', () => {
+  const C = { startX: 200, startY: 150 };
+
+  it('linear recursion draws (existing draw(6))', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+def draw(n):
+    if n == 0:
+        return
+    t.forward(30)
+    t.right(60)
+    draw(n - 1)
+draw(6)`,
+      C,
+    );
+    expect(items.length).toBe(1);
+    // 6 段前进，正六边形闭合于起点
+    expect(Math.round(items[0].points[0])).toBe(200);
+    expect(Math.round(items[0].points[1])).toBe(150);
+    expect(Math.round(items[0].points[items[0].points.length - 2])).toBe(200);
+    expect(Math.round(items[0].points[items[0].points.length - 1])).toBe(150);
+  });
+
+  it('variable isolation across recursion frames (coordinate-exact)', () => {
+    // draw(n, step) 每层 step 递减：30→25→20，若帧间变量被串扰则终点坐标错误
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+def draw(n, step):
+    if n == 0:
+        return
+    t.forward(step)
+    t.right(90)
+    draw(n - 1, step - 5)
+draw(3, 30)`,
+      C,
+    );
+    expect(items.length).toBe(1);
+    const p = items[0].points; // 8 个坐标 = 4 顶点
+    expect(p.length).toBe(8);
+    // (0,0),(30,0),(30,-25),(10,-25) → 画布 (200,150),(230,150),(230,175),(210,175)
+    expect(Math.round(p[0])).toBe(200);
+    expect(Math.round(p[1])).toBe(150);
+    expect(Math.round(p[2])).toBe(230);
+    expect(Math.round(p[3])).toBe(150);
+    expect(Math.round(p[4])).toBe(230);
+    expect(Math.round(p[5])).toBe(175);
+    expect(Math.round(p[6])).toBe(210);
+    expect(Math.round(p[7])).toBe(175);
+  });
+
+  it('recursion returning a value used in an expression (factorial)', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+def fact(n):
+    if n <= 1:
+        return 1
+    return n * fact(n - 1)
+t.forward(fact(4))`,
+      C,
+    );
+    expect(items.length).toBe(1);
+    // fact(4)=24 → 终点画布 x=200+24=224
+    const p = items[0].points;
+    expect(Math.round(p[p.length - 2])).toBe(224);
+    expect(Math.round(p[p.length - 1])).toBe(150);
+  });
+
+  it('mutual recursion (a<->b) still draws', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+def a(n):
+    if n == 0:
+        return
+    t.forward(10)
+    t.left(45)
+    b(n - 1)
+def b(n):
+    if n == 0:
+        return
+    t.forward(10)
+    t.right(45)
+    a(n - 1)
+a(4)`,
+      C,
+    );
+    expect(items.length).toBe(1);
+    // 4 段前进 → 5 顶点
+    expect(items[0].points.length).toBe(10);
+  });
+
+  it('deep double recursion branch(6) produces full tree', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+t.penup()
+t.goto(0, -100)
+t.pendown()
+t.left(90)
+def branch(n):
+    if n == 0:
+        return
+    t.forward(30)
+    t.left(30)
+    branch(n - 1)
+    t.right(60)
+    branch(n - 1)
+    t.left(30)
+    t.backward(30)
+branch(6)`,
+      C,
+    );
+    expect(items.length).toBe(1);
+    // 深度6双递归：2^6-1=63 非叶节点 × 2 段 = 126 段 → 127 顶点
+    expect(items[0].points.length).toBe(254);
+  });
+
+  it('recursion containing a loop inside the function body', () => {
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+def spiral(n):
+    if n == 0:
+        return
+    for i in range(4):
+        t.forward(10 * n)
+        t.right(90)
+    spiral(n - 1)
+spiral(2)`,
+      C,
+    );
+    expect(items.length).toBe(1);
+    // 两个正方形连续一笔：5 + 4 = 9 顶点
+    expect(items[0].points.length).toBe(18);
   });
 });
