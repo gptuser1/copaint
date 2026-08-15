@@ -25,15 +25,18 @@ export interface LlmParams {
   thinking?: boolean;
 }
 
-// 把画布已有元素转成「布局网格 + 元素清单」摘要，注入提示词让无多模态 LLM
+// 把画布已有元素转成「声明式坐标摘要」，注入提示词让无多模态 LLM
 // 从文字理解画布现状（哪里已有什么），以便在已有内容基础上协作续画。
 // 所有元素都是同级别的创作物，不区分作者。
-// gridSize 可调网格分辨率：格子越细信息越多、token 越多；默认 20×15（每格约 20px）。
+//
+// 设计依据（业界调研 LayoutGPT 2305.15393 / DrawingBench 2512.01174）：
+// 给 LLM 明确的声明式边界框（x∈[..] y∈[..]）比"中心点+尺寸"或"网格字符图"
+// 更清晰——AI 零换算，直接知道每个元素精确占据哪块区域，便于续画定位/避让。
+// 不用网格：布局直觉对无多模态 LLM 价值弱，却占体积且需自行换算行号。
 export function summarizeElements(
   elements: BoardElement[],
   width: number,
   height: number,
-  gridSize?: { cols: number; rows: number },
 ): string {
   const MAX = 40; // 只摘要最近 40 个，避免提示词过大
   const halfW = width / 2;
@@ -43,93 +46,53 @@ export function summarizeElements(
   const ly = (y: number) => halfH - y;
   const used = elements.slice(-MAX);
 
-  // ── 1) 网格字符图：给 AI 布局直觉 ──
-  const COLS = gridSize?.cols ?? 20, ROWS = gridSize?.rows ?? 15;
-  const cellW = width / COLS, cellH = height / ROWS;
-  // 逻辑坐标 → 网格 (c, r)；r=0 在顶部（逻辑 y 最大），列 c=0 在左（逻辑 x 最小）
-  const gc = (lxv: number) => Math.max(0, Math.min(COLS - 1, Math.floor((lxv + halfW) / cellW)));
-  const gr = (lyv: number) => Math.max(0, Math.min(ROWS - 1, Math.floor((halfH - lyv) / cellH)));
-  const grid: string[][] = Array.from({ length: ROWS }, () => Array<string>(COLS).fill('.'));
-  const fillCell = (c: number, r: number, ch: string) => { grid[r][c] = ch; };
-  const fillRect = (c0: number, r0: number, c1: number, r1: number, ch: string) => {
-    for (let r = Math.min(r0, r1); r <= Math.max(r0, r1); r++)
-      for (let c = Math.min(c0, c1); c <= Math.max(c0, c1); c++) grid[r][c] = ch;
-  };
-  for (const e of used) {
-    const ch = e.type === 'pen' || e.type === 'eraser' ? 'o'
-      : e.type === 'rect' ? 'r' : e.type === 'ellipse' ? 'e'
-      : e.type === 'line' ? 'l' : 'p';
-    if (e.type === 'rect') {
-      const x0 = e.x ?? 0, y0 = e.y ?? 0;
-      fillRect(gc(lx(x0)), gr(ly((y0 + (e.height ?? 0)))), gc(lx(x0 + (e.width ?? 0))), gr(ly(y0)), ch);
-    } else if (e.type === 'ellipse') {
-      const cx = e.x ?? 0, cy = e.y ?? 0, rx = (e.width ?? 0) / 2, ry = (e.height ?? 0) / 2;
-      // 保守：用外接矩形占格，粗粒度够用
-      fillRect(gc(lx(cx - rx)), gr(ly(cy + ry)), gc(lx(cx + rx)), gr(ly(cy - ry)), ch);
-    } else {
-      const pts = e.points && e.points.length
-        ? e.points
-        : (e.type === 'line' ? [e.x ?? 0, e.y ?? 0, e.x2 ?? 0, e.y2 ?? 0] : []);
-      if (e.type === 'line') {
-        const x0 = pts[0], y0 = pts[1], x1 = pts[2], y1 = pts[3];
-        const steps = Math.max(Math.abs(gc(lx(x1)) - gc(lx(x0))), Math.abs(gr(ly(y1)) - gr(ly(y0))), 1);
-        for (let k = 0; k <= steps; k++) {
-          const t = k / steps;
-          fillCell(gc(lx(x0 + (x1 - x0) * t)), gr(ly(y0 + (y1 - y0) * t)), ch);
-        }
-      } else {
-        for (let k = 0; k + 1 < pts.length; k += 2) fillCell(gc(lx(pts[k])), gr(ly(pts[k + 1])), ch);
-      }
+  // 提取元素边界框（逻辑坐标），返回 {x0,y0,x1,y1} 或 null（无有效几何）
+  const bbox = (e: BoardElement): { x0: number; y0: number; x1: number; y1: number } | null => {
+    let pts: number[] = [];
+    if (e.type === 'line' && e.x != null && e.x2 != null) {
+      pts = [e.x, e.y ?? 0, e.x2, e.y2 ?? 0];
+    } else if ((e.type === 'rect' || e.type === 'ellipse') && e.x != null && e.width != null) {
+      const h = e.height ?? 0;
+      pts = [e.x, e.y ?? 0, e.x + e.width, (e.y ?? 0) + h];
+    } else if (e.points && e.points.length >= 4) {
+      pts = e.points;
     }
-  }
-  const gridText = renderGrid(grid);
+    if (pts.length < 4) return null;
+    const xs = pts.filter((_, i) => i % 2 === 0);
+    const ys = pts.filter((_, i) => i % 2 === 1);
+    return { x0: lx(Math.min(...xs)), y0: ly(Math.max(...ys)), x1: lx(Math.max(...xs)), y1: ly(Math.min(...ys)) };
+  };
 
-  // ── 2) 元素清单：紧凑格式，结构化元素给精确几何，自由线给中心/范围 ──
+  // 方位词：按元素中心在画布中的位置给"左/中/右 × 上/中/下"九宫格描述
+  const loc = (b: { x0: number; y0: number; x1: number; y1: number }): string => {
+    const cx = (b.x0 + b.x1) / 2;
+    const cy = (b.y0 + b.y1) / 2;
+    const xz = cx < -halfW / 3 ? '左' : cx > halfW / 3 ? '右' : '中';
+    const yz = cy > halfH / 3 ? '上' : cy < -halfH / 3 ? '下' : '中';
+    if (xz === '中' && yz === '中') return '居中';
+    return `${xz}${yz}`; // 左上 上中 右上 左中 右中 左下 下中 右下
+  };
+
+  const typeName: Record<string, string> = {
+    rect: '矩形', ellipse: '椭圆', line: '直线', polygon: '多边形', pen: '手绘线', eraser: '橡皮',
+  };
+
   const list: string[] = [];
   for (const e of used) {
-    let desc = '';
-    if (e.type === 'pen' || e.type === 'eraser') {
-      const pts = e.points || [];
-      if (pts.length < 4) continue;
-      const xs = pts.filter((_, i) => i % 2 === 0);
-      const ys = pts.filter((_, i) => i % 2 === 1);
-      desc = `o 中心(${Math.round(lx((Math.min(...xs) + Math.max(...xs)) / 2))},${Math.round(ly((Math.min(...ys) + Math.max(...ys)) / 2))})`
-        + ` 约${Math.round(Math.max(...xs) - Math.min(...xs))}×${Math.round(Math.max(...ys) - Math.min(...ys))}px ${Math.round(pts.length / 2)}点`;
-    } else if (e.type === 'line') {
-      desc = `l (${Math.round(lx(e.x ?? 0))},${Math.round(ly(e.y ?? 0))})->(${Math.round(lx(e.x2 ?? 0))},${Math.round(ly(e.y2 ?? 0))})`;
-    } else if (e.type === 'polygon') {
-      const pts = e.points || [];
-      if (pts.length < 4) continue;
-      const xs = pts.filter((_, i) => i % 2 === 0);
-      const ys = pts.filter((_, i) => i % 2 === 1);
-      desc = `p 中心(${Math.round(lx((Math.min(...xs) + Math.max(...xs)) / 2))},${Math.round(ly((Math.min(...ys) + Math.max(...ys)) / 2))})`
-        + ` 约${Math.round(Math.max(...xs) - Math.min(...xs))}×${Math.round(Math.max(...ys) - Math.min(...ys))}px fill=${e.fill || e.color}`;
-    } else {
-      // rect / ellipse
-      const x = e.x ?? 0, y = e.y ?? 0, w = e.width ?? 0, h = e.height ?? 0;
-      const t = e.type === 'rect' ? 'r' : 'e';
-      desc = `${t}(${Math.round(lx(x + w / 2))},${Math.round(ly(y + h / 2))})${Math.round(w)}x${Math.round(h)}`;
-    }
-    if (e.color) desc += ` #${e.color.replace('#', '')}`;
-    list.push(`  ${desc}`);
+    const b = bbox(e);
+    if (!b) continue;
+    const w = Math.round(b.x1 - b.x0);
+    const h = Math.round(b.y1 - b.y0);
+    const fill = e.type === 'polygon' || e.type === 'rect' || e.type === 'ellipse' ? e.fill || e.color : e.color;
+    // 声明式：名称 · 方位 · 边界框 · 颜色
+    list.push(
+      `  - ${typeName[e.type] || e.type} ${loc(b)} x∈[${Math.round(b.x0)},${Math.round(b.x1)}] y∈[${Math.round(b.y0)},${Math.round(b.y1)}] ${w}x${h}`
+      + `${fill ? ` #${fill.replace('#', '')}` : ''}`,
+    );
   }
   if (used.length === 0) return 'existing: none（空画板）';
-  return `existing: ${used.length}个 网格${COLS}x${ROWS}(r=矩形 e=椭圆 l=线 p=多边形 o=线 .=空; 行号=自上而下) 坐标x∈[-${halfW},${halfW}] y∈[-${halfH},${halfH}]\n`
-    + `${gridText}\n`
-    + `元素:\n${list.join('\n')}`;
-}
-
-// 把网格按「可读形式」输出：每行完整展开（如 .........p..........），只裁剪全空行。
-// 故意不做游程压缩——压缩省的是最便宜的输入 token，却让模型在思考中额外
-// 花按输出价计费的 token 去解码，得不偿失；保持可读让模型零负担直接理解。
-function renderGrid(grid: string[][]): string {
-  const out: string[] = [];
-  for (let r = 0; r < grid.length; r++) {
-    const row = grid[r];
-    if (row.every((c) => c === '.')) continue; // 空行不输出
-    out.push(`${r} ${row.join('')}`);
-  }
-  return out.join('\n');
+  return `existing: 已有 ${used.length} 个元素 坐标x∈[-${halfW},${halfW}] y∈[-${halfH},${halfH}]（原点在中心，y 向上）:\n`
+    + list.join('\n');
 }
 
 // 固定提示词（system）：字节级稳定，作为前缀命中 prompt 缓存。
