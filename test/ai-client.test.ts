@@ -32,23 +32,31 @@ describe('ai turtle prompt', () => {
     expect(sys).toContain('只允许');
   });
 
-  it('covers core commands in the reference', () => {
-    for (const cmd of ['fd', 'lt', 'rt', 'pu', 'pd', 'color', 'width', 'goto',
-      'circle', 'dot', 'rect', 'ellipse', 'line', 'begin_fill', 'repeat']) {
-      expect(sys).toContain(cmd);
+  it('covers core python turtle methods in the reference', () => {
+    for (const m of ['forward', 'backward', 'left', 'right', 'penup', 'pendown',
+      'goto', 'setx', 'sety', 'setheading', 'circle', 'dot', 'color', 'pencolor',
+      'fillcolor', 'width', 'begin_fill', 'end_fill', 'clear']) {
+      expect(sys).toContain(m);
     }
   });
 
-  it('does NOT expose complex syntax to the built-in AI', () => {
-    // 克制版：只暴露基础命令 + repeat，绝不教内置 AI 使用变量/表达式/条件/函数，
-    // 否则生成的脚本会失控（画小屋乱飞）。这些词一旦出现在提示词里即回归。
-    for (const banned of ['x = ', 'while', 'for (', 'to name', 'sqrt',
-      'sin(', 'cos(', 'random(', 'if <条件>', '数学函数', '自定义函数']) {
-      expect(sys).not.toContain(banned);
+  it('exposes python turtle syntax that the backend supports', () => {
+    // 后端已支持 Python turtle 子集：提示词要教 AI 用 for/while/变量/列表/数学函数
+    for (const allowed of ['for i in range', 'while', 'if ', 'elif', 'else', 'colors[i]',
+      'sqrt', 'sin', 'cos', 'random', 'break', 'continue', 'and / or / not', 'import turtle']) {
+      expect(sys).toContain(allowed);
     }
-    // 明确禁止，AI 才知道不能用
+  });
+
+  it('explicitly forbids unsupported python constructs', () => {
+    // 子集外语法必须出现在"禁止"说明里，AI 才知道边界
+    for (const banned of ['递归', 'append()', 'len()', 'colors[1:]', '推导式',
+      'dict', 'f-string', 'print()']) {
+      expect(sys).toContain(banned);
+    }
     expect(sys).toContain('禁止');
-    expect(sys).toContain('变量');
+    // 不教 def 函数定义（递归的前提），避免 AI 尝试函数式写法
+    expect(sys).not.toContain('def ');
   });
 
   it('includes existing elements summary at the end of user message', () => {

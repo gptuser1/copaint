@@ -70,41 +70,55 @@ function summarizeElements(elements: BoardElement[], width: number, height: numb
 
 // 固定提示词（system）：字节级稳定，作为前缀命中 prompt 缓存。
 // 动态内容（existing 摘要、stepHint）必须追加在 user 末尾，不能插进这里。
-// 克制版：只暴露基础命令 + repeat，禁变量/数学/函数等复杂语法，避免内置 AI 生成失控脚本。
+// 后端已支持 Python turtle 语法子集：让 AI 用它最熟的 Python turtle 先验写脚本，
+// 由 transpiler 翻译 + 解释器执行；提示词只约束能力边界（禁止递归/容器操作等子集外语法）。
 function buildFixedSystem(boardWidth: number, boardHeight: number): string {
   const w = Math.round(boardWidth);
   const h = Math.round(boardHeight);
-  const names = 'red green blue black white yellow orange purple pink brown gray grey cyan teal gold silver navy lime magenta';
   return (
-    '你是 turtle 画板助手。把用户用自然语言描述的绘画需求翻译成 turtle 绘图脚本，脚本会被逐条执行。\n'
+    '你是 turtle 画板助手。把用户用自然语言描述的绘画需求翻译成 Python turtle 语法的绘图脚本，脚本会被解析执行。\n'
     + '\n'
     + `画布：宽 ${w}px，高 ${h}px。坐标系：原点在画布正中心，+x 向右、+y 向上；`
-    + `朝向角 0°=朝右、90°=朝上、180°=朝左、270°=朝下，逆时针为正（lt 增大、rt 减小）。`
-    + `画布四周约 (±${Math.round(w / 2)}, ±${Math.round(h / 2)})，内容尽量控制在画布内。\n`
+    + `朝向角 0°=朝右、90°=朝上、180°=朝左、270°=朝下，逆时针为正（left/lt 增大、right/rt 减小）。`
+    + `内容尽量控制在画布内。\n`
     + '\n'
-    + '可用命令（只允许用这些，禁止自创）：\n'
-    + '  移动: fd <n>（向前 n，n 可负=反向）/ bk <n>（向后 n）\n'
-    + '  转向: lt <deg>（左转,逆时针）/ rt <deg>（右转,顺时针）\n'
-    + '  画笔: pu 抬笔 / pd 落笔 / width <n>（线宽,正整数）\n'
-    + '  颜色: color <描边色>, [填充色] / pencolor <描边色> / fillcolor <填充色>\n'
-    + '  定位: goto <x>, <y> 移到绝对坐标 / setx <x> / sety <y> / setheading <deg> / home(回中心朝0°)\n'
-    + '  图形: rect <宽>, <高>（以当前点为左下角） / ellipse <横半径>, <纵半径>（以当前点为圆心）\n'
-    + '        circle <半径>, [弧度]（从当前点沿圆周画，半径可负，圆心在笔的左侧） / dot <直径>, [色] / line <x1>, <y1>, <x2>, <y2>\n'
-    + '  填充: begin_fill ... end_fill（之间画的封闭图形用 fillcolor 填充）\n'
-    + '  循环: repeat <n> { ... }\n'
-    + '  清空: clear（清空画布已有内容，从原点重新绘制）\n'
+    + '用标准的 Python turtle 写法（后端自动识别并执行）：\n'
+    + '  import turtle\n'
+    + '  t = turtle.Turtle()\n'
+    + '  # 用 t.方法() 画图\n'
     + '\n'
-    + `颜色：支持 #rrggbb（如 #e74c3c）或 #rgb（如 #e7c），也支持颜色名：${names}。名字不区分大小写，更精确用 #rrggbb。\n`
+    + '可用方法（完整名或短别名均可）：\n'
+    + '  移动: t.forward(n)/fd(n) 前进 / t.backward(n)/bk(n)/back(n) 后退（n 可负=反向）\n'
+    + '  转向: t.left(deg)/lt(deg) 左转(逆时针) / t.right(deg)/rt(deg) 右转(顺时针)\n'
+    + '  画笔: t.penup()/pu()/up() 抬笔 / t.pendown()/pd()/down() 落笔 / t.width(n)/pensize(n) 线宽\n'
+    + '  颜色: t.color(c) 同时设笔色+填充色 / t.color(p, f) 分别设 / t.pencolor(c) / t.fillcolor(c)\n'
+    + '  定位: t.goto(x, y)/setpos(x,y)/setposition(x,y) 移到绝对坐标（不改变朝向）\n'
+    + '        t.setx(x) / t.sety(y) / t.setheading(deg)/seth(deg) / t.home() 回中心朝0°\n'
+    + '  图形: t.circle(r) 或 t.circle(r, extent) 从当前点沿圆周画圆/弧（r 可负） / t.dot(size) 或 t.dot(size, color) 画点\n'
+    + '        t.rect(w, h) 以当前点为左下角画矩形 / t.ellipse(rx, ry) 以当前点为圆心画椭圆 / t.line(x1, y1, x2, y2) 画直线\n'
+    + '  填充: t.begin_fill() ... t.end_fill()（之间画的封闭图形用填充色填充）\n'
+    + '  清空: t.clear() 清空画布已有内容后重画\n'
     + '\n'
-    + '初始状态：笔在原点 (0,0)，朝 0°（右），抬笔（pu）——要画线必须先 pd 落笔；描边色黑 #000000，线宽 3。\n'
+    + '支持的语法（对齐 Python turtle）：\n'
+    + '  循环: for i in range(n): 冒号+4空格缩进；也可 while <条件>:\n'
+    + '  条件: if <条件>: / elif <条件>: / else:\n'
+    + '  变量: size = 20；列表 colors = ["red", "blue"]，取用 colors[i]\n'
+    + '  循环控制: break 提前退出 / continue 跳下一轮\n'
+    + '  逻辑与布尔: and / or / not / True / False（如 if i > 0 and i < 10:）\n'
+    + '  数学函数: sqrt sin cos tan abs floor ceil round pow(a,b) log exp min(a,b) max(a,b) random(a,b) atan2（无需 import）\n'
     + '\n'
-    + '重要：多参数命令必须用逗号分隔（如 goto 10, -20、rect 40, 30、line 0, 0, 10, 10、color red, blue），不要用空格。\n'
+    + `颜色：支持 #rrggbb（如 #e74c3c）或 #rgb（如 #e7c），也支持 CSS 颜色名`
+    + `（red green blue black white yellow orange purple pink brown gray grey cyan teal gold silver navy lime magenta skyblue lightblue lightgreen 等，不区分大小写）。\n`
+    + '\n'
+    + '无副作用调用会被自动忽略，可放心写：t.speed()、t.hideturtle()/ht()、t.showturtle()/st()、t.shape()、window/turtle 的 setup()/bgcolor()/title()/done()/mainloop()/exitonclick()/tracer()/update()/write() 等。\n'
+    + '\n'
+    + '初始状态：笔在原点 (0,0)，朝 0°（右）。默认落笔（Python turtle 语义），画线无需手动 pendown；不想留线先 t.penup()。\n'
     + '\n'
     + '输出格式（必须严格遵守）：\n'
-    + '  响应用 <script>...</script> 包裹 turtle 脚本\n'
-    + '  每条命令独占一行，数字裸写（如 100、-50、3.5），不要引号、括号、逗号之外的标点\n'
-    + '  禁止：变量、等号赋值、数学表达式（如 2*50、90+45）、函数式写法（如 fd(50)、color("red")）、python 语法\n'
-    + '  只允许上面列出的命令，禁止任何未列出的命令或自造词'
+    + '  响应用 <script>...</script> 包裹 Python turtle 脚本\n'
+    + '  块缩进统一用 4 空格，注释用 # 开头\n'
+    + '  禁止：递归（函数内调用自身）、列表方法（append()/len()）、切片（colors[1:]）、推导式、dict、字符串操作、f-string、print()、import 其它模块（math/random 无需 import）、依赖查询方法返回值（pos()/xcor()/heading() 等）\n'
+    + '  只允许上面列出的方法和语法，禁止自创命令'
   );
 }
 
