@@ -10,21 +10,12 @@ import type { BoardElement } from '../domain/types';
 
 export const boardsApp = new Hono<{ Bindings: Env }>();
 
-// 读取画板状态（不存在则创建）
+// 读取画板状态（不存在则创建）。
+// summary 字段与内置 AI 注入提示词的摘要完全一致，外部 agent 也拿到相同结构。
 boardsApp.get('/:id', async (c) => {
   const state = await board.getOrCreate(c.env, c.req.param('id'));
-  return c.json(state);
-});
-
-// AI 上下文：返回与内置 AI 注入提示词一致的画布摘要（声明式边界框文本）
-// 供外部 agent 通过 API 获取与内置 AI 相同结构的信息，便于续画定位/避让
-boardsApp.get('/:id/ai/context', async (c) => {
-  const state = await board.getState(c.env, c.req.param('id'));
-  if (!state) throw new NotFoundError('board not found');
   return c.json({
-    width: state.meta.width,
-    height: state.meta.height,
-    elementCount: state.elements.length,
+    ...state,
     summary: summarizeElements(state.elements, state.meta.width, state.meta.height),
   });
 });
