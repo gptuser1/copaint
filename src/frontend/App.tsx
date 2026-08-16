@@ -83,17 +83,6 @@ interface AiLog {
   error?: string;
 }
 
-// 通用按钮样式
-const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer', background: 'var(--btn-bg)', color: 'var(--text)', border: '1px solid var(--border)' };
-
-// 等宽代码展示样式（思考/原始响应/脚本等）
-const monoStyle: React.CSSProperties = {
-  margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  fontSize: 12, lineHeight: 1.6, background: '#0f1117', color: '#d6d6d6',
-  padding: 8, borderRadius: 4, maxHeight: 200, overflowY: 'auto',
-};
-
 // 可折叠内容区块：标题栏 + 折叠按钮 + 可选附加操作（右侧）
 function CollapsibleSection({
   title, open, onToggle, actions, children,
@@ -105,13 +94,14 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ flex: 1 }}>{title}</span>
+    <div className="panel">
+      <div className="panel-head">
+        <span>{title}</span>
+        <span className="spacer" />
         {actions}
-        <button onClick={onToggle} style={btnStyle} title="收起/展开">{open ? '▾ 收起' : '▸ 展开'}</button>
+        <button onClick={onToggle} title="收起/展开">{open ? '▾ 收起' : '▸ 展开'}</button>
       </div>
-      {open && <div style={{ marginTop: 8 }}>{children}</div>}
+      {open && <div className="panel-body">{children}</div>}
     </div>
   );
 }
@@ -411,64 +401,72 @@ export function App() {
   // 未登录：令牌输入界面
   if (!authed) {
     return (
-      <div style={{ padding: 32, maxWidth: 420, margin: '0 auto', fontFamily: 'system-ui, sans-serif' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ marginTop: 0 }}>🖌️ CoPaint</h2>
-          <button onClick={toggleTheme} style={btnStyle}>{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
+      <div className="auth">
+        <div className="auth-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 className="auth-title" style={{ margin: 0 }}>🖌️ CoPaint</h2>
+            <button onClick={toggleTheme} className="btn-ghost" title="切换主题">{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
+          </div>
+          <div className="auth-sub">请输入访问令牌以继续</div>
+          <input
+            className="auth-field"
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+            placeholder="访问令牌"
+            type="password"
+          />
+          {error && <p className="auth-error">{error}</p>}
+          <button onClick={handleLogin} className="btn-primary auth-btn">登录</button>
         </div>
-        <div style={{ marginBottom: 8 }}>请输入访问令牌以继续</div>
-        <input
-          value={tokenInput}
-          onChange={(e) => setTokenInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
-          placeholder="访问令牌"
-          type="password"
-          style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
-        />
-        {error && <div style={{ color: '#e74c3c', marginTop: 8 }}>{error}</div>}
-        <button onClick={handleLogin} style={{ ...btnStyle, marginTop: 12 }}>登录</button>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 16, fontFamily: 'system-ui, sans-serif' }}>
-      <h2 style={{ marginTop: 0 }}>🖌️ CoPaint</h2>
+    <div className="page">
+      <header className="page-header">
+        <div>
+          <h1 className="page-title">🖌️ CoPaint</h1>
+          <div className="page-sub">在线画板 · 手绘与 AI 协作</div>
+        </div>
+        <button onClick={toggleTheme} className="btn-ghost" title="切换主题">{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
+      </header>
 
       {/* 工具栏（可折叠，减少占用空间） */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-        <button onClick={() => setToolbarOpen((o) => !o)} style={btnStyle} title="收起/展开工具栏">
+      <div className="toolbar">
+        <button onClick={() => setToolbarOpen((o) => !o)} className="btn-ghost" title="收起/展开工具栏">
           {toolbarOpen ? '▾ 工具栏' : '▸ 工具栏'}
         </button>
         {toolbarOpen && (
           <>
-            <button onClick={toggleTheme} style={btnStyle}>{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
+            <span className="toolbar-sep" />
             {TOOLS.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTool(t.id)}
-                style={{ ...btnStyle, background: tool === t.id ? 'var(--btn-active)' : 'var(--btn-bg)' }}
+                className={`tool-btn${tool === t.id ? ' active' : ''}`}
               >
                 {t.label}
               </button>
             ))}
-            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="颜色" style={{ width: 34, height: 30, padding: 0, border: 'none' }} />
-            <input type="number" min={1} max={30} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} title="粗细" style={{ width: 56 }} />
-            <button onClick={handleUndo} style={btnStyle}>↩ 撤销</button>
-            <button onClick={handleClear} style={btnStyle}>🗑 清空</button>
-            <button onClick={handleExport} style={btnStyle}>⬇ 导出 PNG</button>
-            <button onClick={() => setShowConfig((s) => !s)} style={btnStyle}>⚙ 配置</button>
-            <button onClick={handleLogout} style={btnStyle}>退出</button>
+            <span className="toolbar-sep" />
+            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="颜色" style={{ width: 34, height: 30 }} />
+            <input type="number" min={1} max={30} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} title="粗细" style={{ width: 60 }} />
+            <span className="toolbar-sep" />
+            <button onClick={handleUndo} title="撤销">↩ 撤销</button>
+            <button onClick={handleClear} title="清空">🗑 清空</button>
+            <button onClick={handleExport} title="导出 PNG">⬇ 导出</button>
+            <button onClick={() => setShowConfig((s) => !s)} title="配置">⚙ 配置</button>
+            <button onClick={handleLogout} className="btn-danger" title="退出">退出</button>
           </>
         )}
       </div>
 
       {/* 当前画板信息 */}
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-        画板：{board.width} × {board.height}
-      </div>
+      <div className="board-info">画板 {board.width} × {board.height}</div>
 
-      {error && <div style={{ color: '#e74c3c', marginBottom: 8 }}>{error}</div>}
+      {error && <div className="error-banner">{error}</div>}
 
       {/* 配置面板 */}
       {showConfig && <ConfigPanel onError={setError} />}
@@ -487,52 +485,50 @@ export function App() {
       />
 
       {/* AI 指令（textarea）+ 相关按钮 */}
-      <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 6, padding: 10, background: 'var(--bg)' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🤖 AI 指令</div>
-        <textarea
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAi(); }}
-          placeholder={'描述你想让 AI 画的内容，Ctrl/Cmd+Enter 提交。\n例如：画一个红色的太阳在左上角，下方有一片绿色草地'}
-          spellCheck={false}
-          style={{
-            width: '100%', boxSizing: 'border-box', minHeight: 56, resize: 'vertical',
-            padding: 6, fontFamily: 'inherit', fontSize: 13, lineHeight: 1.5,
-          }}
-        />
-        <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button onClick={handleAi} disabled={aiBusy} style={{ ...btnStyle, background: aiBusy ? 'var(--btn-bg)' : '#4caf50', color: aiBusy ? 'var(--muted)' : '#fff' }}>
-            {aiBusy ? '生成中…' : '🤖 让 AI 画'}
-          </button>
-          <button onClick={handleTestAi} disabled={aiBusy} style={{ ...btnStyle, background: aiBusy ? 'var(--btn-bg)' : '#4c1d95', color: aiBusy ? 'var(--muted)' : '#e9d5ff' }}>
-            {aiBusy ? '生成中…' : '🔬 测试 AI'}
-          </button>
-          <button onClick={() => setAiLogs([])} style={btnStyle}>清空日志</button>
-        </div>
-        {/* LLM 可调参数 */}
-        <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: 'var(--muted)' }}>
-          <label title="随机性，0-2，越高越发散">
-            温度
-            <input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(e) => setTemperature(e.target.value)} style={{ width: 60, marginLeft: 4, padding: 4 }} />
-          </label>
-          <label title="最大回复 token 数">
-            max_tokens
-            <input type="number" min={64} max={8192} step={64} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} style={{ width: 80, marginLeft: 4, padding: 4 }} />
-          </label>
-          <label title="深度思考开关，仅思考类模型生效">
-            <input type="checkbox" checked={thinking} onChange={(e) => setThinking(e.target.checked)} style={{ marginRight: 4 }} />
-            深度思考
-          </label>
-          <label title="思维链 token 上限（thinking_budget，128-32768），留空不限制">
-            思考上限
-            <input
-              type="number" min={128} max={32768} step={128}
-              value={thinkingBudget}
-              onChange={(e) => setThinkingBudget(e.target.value)}
-              placeholder="不限制"
-              style={{ width: 80, marginLeft: 4, padding: 4 }}
-            />
-          </label>
+      <div className="panel">
+        <div className="panel-head">🤖 AI 指令</div>
+        <div className="panel-body">
+          <textarea
+            className="instr-area"
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAi(); }}
+            placeholder={'描述你想让 AI 画的内容，Ctrl/Cmd+Enter 提交。\n例如：画一个红色的太阳在左上角，下方有一片绿色草地'}
+            spellCheck={false}
+          />
+          <div className="instr-actions">
+            <button onClick={handleAi} disabled={aiBusy} className="btn-primary">
+              {aiBusy ? '生成中…' : '🤖 让 AI 画'}
+            </button>
+            <button onClick={handleTestAi} disabled={aiBusy} className="btn-primary" style={{ background: '#4c1d95', borderColor: 'transparent' }}>
+              {aiBusy ? '生成中…' : '🔬 测试 AI'}
+            </button>
+            <button onClick={() => setAiLogs([])}>清空日志</button>
+          </div>
+          {/* LLM 可调参数 */}
+          <div className="llm-params">
+            <label title="随机性，0-2，越高越发散">
+              温度
+              <input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(e) => setTemperature(e.target.value)} />
+            </label>
+            <label title="最大回复 token 数">
+              max_tokens
+              <input type="number" min={64} max={8192} step={64} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
+            </label>
+            <label title="深度思考开关，仅思考类模型生效">
+              <input type="checkbox" checked={thinking} onChange={(e) => setThinking(e.target.checked)} />
+              深度思考
+            </label>
+            <label title="思维链 token 上限（thinking_budget，128-32768），留空不限制">
+              思考上限
+              <input
+                type="number" min={128} max={32768} step={128}
+                value={thinkingBudget}
+                onChange={(e) => setThinkingBudget(e.target.value)}
+                placeholder="不限制"
+              />
+            </label>
+          </div>
         </div>
       </div>
 
@@ -541,11 +537,11 @@ export function App() {
         title="🧠 AI 思考过程"
         open={showThinking}
         onToggle={() => setShowThinking((s) => !s)}
-        actions={aiBusy && <span style={{ fontSize: 12, color: 'var(--muted)' }}>生成中…</span>}
+        actions={aiBusy && <span className="empty">生成中…</span>}
       >
-        <pre style={{ ...monoStyle, color: '#9ecbff' }}>
+        <div className="mono-box thinking">
           {aiThinking || '暂无思考内容。开启「深度思考」后，AI 的思维链会实时显示在这里。'}
-        </pre>
+        </div>
       </CollapsibleSection>
 
       {/* 原始响应（常驻，可折叠） */}
@@ -554,9 +550,9 @@ export function App() {
         open={showResponse}
         onToggle={() => setShowResponse((s) => !s)}
       >
-        <pre style={monoStyle}>
+        <div className="mono-box">
           {aiResponse || '暂无内容。AI 的原始回文字段会实时显示在这里。'}
-        </pre>
+        </div>
       </CollapsibleSection>
 
       {/* turtle 脚本输入/预览：可粘贴或编辑脚本，选择执行到画布；测试 AI 的结果也会填入此处 */}
@@ -566,14 +562,15 @@ export function App() {
         onToggle={() => setShowScript((s) => !s)}
         actions={
           <>
-            <button onClick={handleApplyTest} disabled={aiBusy} style={{ ...btnStyle, background: '#4c1d95', color: '#e9d5ff' }}>
+            <button onClick={handleApplyTest} disabled={aiBusy} className="btn-primary" style={{ background: '#4c1d95', borderColor: 'transparent' }}>
               {aiBusy ? '执行中…' : '▶ 执行到画布'}
             </button>
-            <button onClick={() => setTestScript('')} style={btnStyle}>清空</button>
+            <button onClick={() => setTestScript('')}>清空</button>
           </>
         }
       >
         <textarea
+          className="code-input"
           value={testScript}
           onChange={(e) => setTestScript(e.target.value)}
           onKeyDown={(e) => {
@@ -581,22 +578,6 @@ export function App() {
           }}
           placeholder={'在此输入 turtle 脚本，或先点「🔬 测试 AI」自动填入后再手动微调。\n例如：\npd\ncircle 50\nfd 100\nrt 120'}
           spellCheck={false}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            maxHeight: 220,
-            minHeight: 90,
-            resize: 'vertical',
-            whiteSpace: 'pre',
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            fontSize: 12,
-            lineHeight: 1.5,
-            background: '#0f1117',
-            color: '#d6d6d6',
-            borderRadius: 4,
-            padding: 8,
-            border: '1px solid var(--border)',
-          }}
         />
       </CollapsibleSection>
 
@@ -606,29 +587,13 @@ export function App() {
         open={showLog}
         onToggle={() => setShowLog((s) => !s)}
       >
-        <div
-          ref={logBoxRef}
-          style={{
-            border: '1px solid #ddd',
-            borderRadius: 6,
-            background: '#0f1117',
-            color: '#d6d6d6',
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            fontSize: 12,
-            lineHeight: 1.6,
-            padding: 8,
-            height: 150,
-            overflowY: 'auto',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-          }}
-        >
-          {aiLogs.length === 0 && <div style={{ color: '#666' }}>暂无日志，执行 AI 指令或 turtle 脚本后将在此显示执行结果。</div>}
+        <div ref={logBoxRef} className="log-box">
+          {aiLogs.length === 0 && <div className="empty">暂无日志，执行 AI 指令或 turtle 脚本后将在此显示执行结果。</div>}
           {aiLogs.map((log) => (
             <div key={log.id}>
-              <span style={{ color: '#888' }}>{log.time}</span>{' '}
-              <span style={{ color: log.success === false ? '#ff6b6b' : '#d6d6d6' }}>{log.message}</span>
-              {log.error && <div style={{ color: '#ff8787', marginLeft: 8, whiteSpace: 'pre-wrap' }}>{log.error}</div>}
+              <span className="log-time">{log.time}</span>{' '}
+              <span className={log.success === false ? 'log-error' : ''}>{log.message}</span>
+              {log.error && <div className="log-error" style={{ marginLeft: 8, whiteSpace: 'pre-wrap' }}>{log.error}</div>}
             </div>
           ))}
         </div>
@@ -664,28 +629,32 @@ function ConfigPanel({ onError }: { onError: (msg: string) => void }) {
     }).catch((e) => onError(String(e.message || e)));
   };
 
-  if (!loaded) return <div style={{ marginBottom: 10, color: '#888' }}>加载配置中…</div>;
+  if (!loaded) return <div className="empty" style={{ marginBottom: 10 }}>加载配置中…</div>;
 
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 6, padding: 12, marginBottom: 10, maxWidth: 560 }}>
-      <h3 style={{ marginTop: 0 }}>LLM 配置</h3>
-      {items.map((it) => (
-        <div key={it.key} style={{ marginBottom: 8 }}>
-          <label style={{ display: 'block', fontWeight: 600 }}>{it.desc} {it.set && <span style={{ color: '#2ecc71' }}>已配置</span>}</label>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input
-              type={it.sensitive ? 'password' : 'text'}
-              placeholder={it.placeholder || it.key}
-              value={values[it.key] || ''}
-              onChange={(e) => setValues((v) => ({ ...v, [it.key]: e.target.value }))}
-              onKeyDown={(e) => { if (e.key === 'Enter') save(it.key); }}
-              style={{ flex: 1, padding: 6 }}
-            />
-            <button onClick={() => save(it.key)} style={{ cursor: 'pointer' }}>保存</button>
-            {it.set && <button onClick={() => remove(it.key)} style={{ cursor: 'pointer' }}>删除</button>}
+    <div className="panel" style={{ maxWidth: 560 }}>
+      <h3 className="panel-head" style={{ fontSize: 14 }}>LLM 配置</h3>
+      <div className="panel-body">
+        {items.map((it) => (
+          <div key={it.key} style={{ marginBottom: 10 }}>
+            <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+              {it.desc} {it.set && <span style={{ color: 'var(--success)' }}>已配置</span>}
+            </label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type={it.sensitive ? 'password' : 'text'}
+                placeholder={it.placeholder || it.key}
+                value={values[it.key] || ''}
+                onChange={(e) => setValues((v) => ({ ...v, [it.key]: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === 'Enter') save(it.key); }}
+                style={{ flex: 1 }}
+              />
+              <button onClick={() => save(it.key)}>保存</button>
+              {it.set && <button onClick={() => remove(it.key)}>删除</button>}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

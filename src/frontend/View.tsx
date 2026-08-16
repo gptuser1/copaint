@@ -15,8 +15,6 @@ export function View() {
   const [tokenInput, setTokenInput] = useState('');
   const [error, setError] = useState('');
 
-  const btnStyle: React.CSSProperties = { padding: '4px 10px', cursor: 'pointer', background: 'var(--btn-bg)', color: 'var(--text)', border: '1px solid var(--border)' };
-
   useEffect(() => {
     api.setUnauthorizedHandler(() => {
       api.saveToken('');
@@ -99,32 +97,37 @@ export function View() {
 
   if (!authed) {
     return (
-      <div style={{ padding: 32, maxWidth: 420, margin: '0 auto', fontFamily: 'system-ui, sans-serif' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ marginTop: 0 }}>👁 CoPaint 观看模式</h2>
-          <button onClick={toggleTheme} style={btnStyle}>{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
+      <div className="auth">
+        <div className="auth-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 className="auth-title" style={{ margin: 0 }}>👁 CoPaint 观看模式</h2>
+            <button onClick={toggleTheme} className="btn-ghost" title="切换主题">{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
+          </div>
+          <div className="auth-sub">输入令牌以观看画布</div>
+          <input
+            className="auth-field"
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+            placeholder="访问令牌"
+            type="password"
+          />
+          {error && <p className="auth-error">{error}</p>}
+          <button onClick={handleLogin} className="btn-primary auth-btn">登录</button>
         </div>
-        <div style={{ marginBottom: 8 }}>输入令牌以观看画布</div>
-        <input
-          value={tokenInput}
-          onChange={(e) => setTokenInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
-          placeholder="访问令牌"
-          type="password"
-          style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
-        />
-        {error && <div style={{ color: '#e74c3c', marginTop: 8 }}>{error}</div>}
-        <button onClick={handleLogin} style={{ ...btnStyle, marginTop: 12 }}>登录</button>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 16, fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>👁 CoPaint 观看模式</h2>
-        <button onClick={toggleTheme} style={btnStyle}>{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
-      </div>
+    <div className="page">
+      <header className="page-header" style={{ marginBottom: 12 }}>
+        <div>
+          <h2 className="page-title" style={{ margin: 0 }}>👁 CoPaint 观看模式</h2>
+          <div className="page-sub">实时投影画布</div>
+        </div>
+        <button onClick={toggleTheme} className="btn-ghost" title="切换主题">{theme === 'dark' ? '☀ 亮色' : '🌙 暗色'}</button>
+      </header>
       <DrawCanvas
         elements={elements}
         tool="pen"

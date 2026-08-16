@@ -136,9 +136,8 @@ export function DrawCanvas({ elements, tool, color, strokeWidth, onCommit, width
 
   return (
     <div
+      className="canvas-frame"
       style={{
-        display: 'inline-block',
-        border: '1px solid var(--border)',
         background: BOARD_BG[theme],
         // 绘制模式：阻止触摸滚动/双指缩放/下拉刷新，避免误触；
         // 只读（view）模式不禁用，保证页面可正常滚动缩放
