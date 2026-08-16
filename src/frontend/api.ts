@@ -58,7 +58,7 @@ export function getBoard(): Promise<BoardState> {
 }
 
 // 通过 turtle 脚本落笔（前端手绘也统一走 turtle）
-export function runTurtle(script: string): Promise<{ ok: boolean; added: number }> {
+export function runTurtle(script: string): Promise<{ ok: boolean; added: number; cpuMs?: number }> {
   return req(`/api/boards/${encodeURIComponent(currentBoardId)}/turtle`, {
     method: 'POST',
     body: JSON.stringify({ script }),
@@ -104,6 +104,7 @@ export interface AiStreamEvent {
   raw?: string;              // done：完整正文
   reasoning?: string;        // done：完整思维链
   usage?: AiUsage;           // usage / done：token 用量与缓存命中
+  turtleMs?: number;         // done：渲染落笔的 CPU 用时(ms)
   error?: string;            // error：错误信息
 }
 

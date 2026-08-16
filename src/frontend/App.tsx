@@ -74,7 +74,7 @@ function formatUsage(u: api.AiUsage | null): string {
   return parts.join(' · ');
 }
 
-// AI 执行日志条目
+// 执行日志条目
 interface AiLog {
   id: number;
   time: string;
@@ -150,7 +150,7 @@ export function App() {
   // 单一固定画板
   const board = { id: 'default', width: BOARD_WIDTH, height: BOARD_HEIGHT };
 
-  // AI 执行日志
+  // 执行日志
   const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
   const logBoxRef = useRef<HTMLDivElement>(null);
   const logSeq = useRef(0);
@@ -328,7 +328,7 @@ export function App() {
         } else if (ev.type === 'done') {
           if (ev.script) setTestScript(ev.script);
           addLog({
-            message: `🤖 AI 完成，生成 ${ev.added ?? 0} 个元素${ev.cleared ? '（已清空画布）' : ''}${formatUsage(ev.usage ?? null) ? `｜${formatUsage(ev.usage ?? null)}` : ''}`,
+            message: `🤖 AI 完成，生成 ${ev.added ?? 0} 个元素${ev.cleared ? '（已清空画布）' : ''}${typeof ev.turtleMs === 'number' ? `｜渲染 ${ev.turtleMs}ms` : ''}${formatUsage(ev.usage ?? null) ? `｜${formatUsage(ev.usage ?? null)}` : ''}`,
             success: true,
           });
           setInstruction('');
@@ -396,7 +396,7 @@ export function App() {
     setAiBusy(true);
     try {
       const res = await api.runTurtle(script);
-      addLog({ message: `▶ 已执行脚本 → 生成 ${res.added} 个元素`, success: true });
+      addLog({ message: `▶ 已执行脚本 → 生成 ${res.added} 个元素${typeof res.cpuMs === 'number' ? `｜CPU ${res.cpuMs}ms` : ''}`, success: true });
       const s = await api.getBoard();
       setElements(s.elements);
       // 执行完不清空脚本，方便迭代调试
@@ -600,9 +600,9 @@ export function App() {
         />
       </CollapsibleSection>
 
-      {/* AI 执行日志（常驻，可折叠） */}
+      {/* 执行日志（常驻，可折叠） */}
       <CollapsibleSection
-        title="🤖 AI 执行日志"
+        title="🤖 执行日志"
         open={showLog}
         onToggle={() => setShowLog((s) => !s)}
       >
@@ -623,7 +623,7 @@ export function App() {
             wordBreak: 'break-all',
           }}
         >
-          {aiLogs.length === 0 && <div style={{ color: '#666' }}>暂无日志，提交 AI 指令后将在此显示执行结果。</div>}
+          {aiLogs.length === 0 && <div style={{ color: '#666' }}>暂无日志，执行 AI 指令或 turtle 脚本后将在此显示执行结果。</div>}
           {aiLogs.map((log) => (
             <div key={log.id}>
               <span style={{ color: '#888' }}>{log.time}</span>{' '}

@@ -68,11 +68,14 @@ boardsApp.post('/:id/turtle', async (c) => {
   if (!script) throw new ValidationError('script required');
   const state = await board.getState(c.env, id);
   if (!state) throw new NotFoundError('board not found');
+  // CPU 用时（墙钟近似）：与解释器墙钟守卫同口径，供执行日志展示
+  const t0 = performance.now();
   const items = runTurtle(script, {
     startX: state.meta.width / 2,
     startY: state.meta.height / 2,
     startHeading: 0,
   });
+  const cpuMs = performance.now() - t0;
   // 脚本含 clear 指令：先清空画布再落新元素
   if (items.some(isClearItem)) {
     await board.clearBoard(c.env, id);
@@ -82,5 +85,5 @@ boardsApp.post('/:id/turtle', async (c) => {
   for (const p of partials) {
     added.push(await board.createElement(c.env, id, p as Omit<BoardElement, 'createdAt' | 'id'> & { id?: string }));
   }
-  return c.json({ ok: true, added: added.length });
+  return c.json({ ok: true, added: added.length, cpuMs: Number(cpuMs.toFixed(2)) });
 });

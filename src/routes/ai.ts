@@ -86,8 +86,12 @@ aiApp.post('/:id/ai', async (c) => {
       // 测试模式（apply:false）：只出脚本，不落笔到画布
       let added: BoardElement[] = [];
       let cleared = false;
+      let turtleMs = 0;
       if (apply) {
+        // 渲染 CPU 用时（墙钟近似）：供前端执行日志展示
+        const t0 = performance.now();
         const { elements: partials, cleared: didClear } = elementsFromTurtleScript(script, input.width, input.height);
+        turtleMs = performance.now() - t0;
         cleared = didClear;
         if (cleared) {
           await clearBoard(c.env, id);
@@ -98,7 +102,7 @@ aiApp.post('/:id/ai', async (c) => {
           } catch { /* 单个元素写入失败不阻断整体 */ }
         }
       }
-      await stream.writeSSE({ event: 'done', data: JSON.stringify({ ok: true, script, added: added.length, cleared, raw: content, reasoning, usage }) });
+      await stream.writeSSE({ event: 'done', data: JSON.stringify({ ok: true, script, added: added.length, cleared, raw: content, reasoning, usage, turtleMs: Number(turtleMs.toFixed(2)) }) });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       try { await stream.writeSSE({ event: 'error', data: JSON.stringify({ error: msg }) }); } catch { /* 客户端已断开 */ }
