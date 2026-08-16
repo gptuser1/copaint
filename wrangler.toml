@@ -8,6 +8,10 @@ workers_dev = false
 directory = "./public"
 not_found_handling = "none"
 
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 [secrets]
 required = ["COP_DB_BASE"]
 
