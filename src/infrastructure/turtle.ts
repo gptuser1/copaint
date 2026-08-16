@@ -43,7 +43,7 @@ export interface TurtleOptions {
   startX: number; // 画布中心 x（逻辑原点映射到的画布坐标）
   startY: number; // 画布中心 y
   startHeading?: number; // 度，0=朝右(+x)
-  maxOps?: number;       // 解释器步数粗上限，防止廉价 op 的死循环
+  maxOps?: number;       // 解释器步数粗上限，防止廉价 op 的死循环与输出爆炸（默认 16000，覆盖真实复杂创意场景如 24 朵花的花园 ≈14770 op）
   maxMs?: number;        // 墙钟时间硬上限(ms)，直接对齐运行时 CPU 限制（默认 7）
 }
 
@@ -453,7 +453,7 @@ function parse(tokens: Token[]): Stmt[] {
 
 export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
   const startHeading = opts.startHeading ?? 0;
-  const maxOps = opts.maxOps ?? 20000;
+  const maxOps = opts.maxOps ?? 16000;
   const maxMs = opts.maxMs ?? 7;
   const t0 = performance.now();
 
@@ -894,8 +894,8 @@ export function runTurtle(script: string, opts: TurtleOptions): TurtleItem[] {
       if (aborted) break;
       if (++ops > maxOps) { aborted = true; break; }
       // 墙钟硬上限：op 单价因 op 类型/运行时/机器而异，CPU 时间才是 CF 10ms 限制的直接约束。
-      // 每 1024 op 检查一次（performance.now 有开销，不必每 op 查）；覆盖嵌套 exec（函数体/循环体）。
-      if ((ops & 1023) === 0 && performance.now() - t0 > maxMs) { aborted = true; break; }
+      // 每 256 op 检查一次（fib 类递归每 op 可达 ~0.5µs，间隔太大会让拦截点漂移；开销可忽略）。
+      if ((ops & 255) === 0 && performance.now() - t0 > maxMs) { aborted = true; break; }
       switch (s.kind) {
         case 'cmd': execCmd(s.name, s.args); break;
         case 'assign': setVar(s.name, evalExpr(s.value)); break;

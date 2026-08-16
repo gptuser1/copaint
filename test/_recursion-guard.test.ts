@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { runTurtle } from '../src/infrastructure/turtle';
 
-function bench(script: string, maxOps = 20000, rounds = 5): number {
+function bench(script: string, maxOps = 16000, rounds = 5): number {
   const times: number[] = [];
   for (let i = 0; i < rounds; i++) {
     const t0 = performance.now();
