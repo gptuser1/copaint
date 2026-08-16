@@ -550,6 +550,39 @@ else:
     expect(out).toContain('} else {');
   });
 
+  it('translates else when if body ends with a nested loop', () => {
+    // 回归：if 分支体以 for 循环结尾时，else 之前必须先闭合该循环块，
+    // 否则 else 会被误翻译成无条件执行的裸块，导致递归/分支永不终止。
+    const out = pythonToTurtle(`if n == 0:
+    for i in range(3):
+        t.forward(size)
+        t.left(120)
+else:
+    t.forward(10)`);
+    expect(out).toContain('if (n == 0)');
+    expect(out).toContain('} else {');
+    expect(out).not.toMatch(/\}\n\{\n/); // 不应出现裸块
+
+    // 语义验证：n==0 只画三角形（3 条边），不再画 else 的线
+    const items = runTurtle(
+      `import turtle
+t = turtle.Turtle()
+def tri(n):
+    if n == 0:
+        for i in range(3):
+            t.forward(30)
+            t.left(120)
+    else:
+        t.forward(100)
+tri(0)
+t.hideturtle()
+turtle.done()`,
+      C,
+    );
+    // 只应有一条 3 段折线（三角形），没有 else 的直线
+    expect(items.length).toBe(1);
+  });
+
   it('range with start/step maps to while loop bounds', () => {
     const out = pythonToTurtle(`for i in range(1, 5):
     t.forward(i)`);

@@ -216,15 +216,17 @@ function buildTurtle(lines: LineInfo[]): string {
   for (const L of lines) {
     if (L.kind === 'drop') continue;
 
-    // else / elif 必须与匹配的 if 同缩进，先闭合 if 的 body 再续接，不能走通用 popUntil
+    // else / elif 必须与匹配的 if 同缩进。先闭合 if body 内更深层的嵌套块
+    // （如 body 以 for/while 结尾时，栈顶还是那个嵌套块而非 if），再弹出 if 续接 else。
     if (L.kind === 'else' || L.kind === 'elif') {
+      popUntil(L.indent + 1); // 弹出 body 层及其中嵌套块，保留 if 层
       const top = stack[stack.length - 1];
       if (top && top.indent === L.indent) {
-        popUntil(L.indent + 1); // 弹出 body 层，保留 if 层
         stack.pop(); // 弹 if
         out.push(L.kind === 'else' ? '} else {' : `} else if (${L.cond}) {`);
         stack.push({ indent: L.indent, kind: L.kind });
       } else {
+        // 孤立 else/elif（无匹配 if）：容错兜底
         popUntil(L.indent);
         out.push(L.kind === 'else' ? '{' : `if (${L.cond}) {`);
         stack.push({ indent: L.indent, kind: L.kind });
